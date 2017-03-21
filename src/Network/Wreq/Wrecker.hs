@@ -4,10 +4,10 @@
     This file was initially copied from Network.Wreq.Session
     (c) 2014 Bryan O'Sullivan. See the source for the full copy right info.
 -}
-
 -- All of this code below was copied from bos's `Network.Wreq.Session`
 -- and modified to include the wrecker recorder
 {-# LANGUAGE CPP, RecordWildCards #-}
+
 module Network.Wreq.Wrecker
   ( Session
   , defaultManagerSettings
@@ -30,96 +30,32 @@ module Network.Wreq.Wrecker
   , putWith
   , deleteWith
   ) where
-import Wrecker
-import qualified Network.Wreq.Session as Session
-import Network.Connection (ConnectionContext)
-import qualified Network.HTTP.Client.Internal as HTTP
-import qualified Network.HTTP.Client_0_5_3_2_SHIM as HTTP_SHIM
-import qualified Network.HTTP.Client_0_5_3_2_SHIM.Internal as HTTP_SHIM
-import qualified Network.HTTP.Client.TLS_0_3_3_SHIM as TLS
+
 import qualified Data.ByteString.Lazy as L
-import qualified Network.Wreq.Types as Wreq
 import Data.Default (def)
-import Data.ByteString (ByteString)
-import Network.Socket
+import Network.Connection (ConnectionContext)
+import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as TLS
+import qualified Network.Wreq.Session as Session
+import qualified Network.Wreq.Types as Wreq
+import Wrecker
 
 {-| An opaque type created by 'withWreq', 'withWreqNoCookies',
     or 'withWreqSettings'. All HTTP calls require a 'Session'.
 -}
 data Session = Session
-  { sSession  :: Session.Session
+  { sSession :: Session.Session
   , sRecorder :: Recorder
   }
-
-toHTTPConnection :: HTTP_SHIM.Connection
-                 -> HTTP.Connection
-toHTTPConnection HTTP_SHIM.Connection {..} = HTTP.Connection {..}
-
-convertTlsConnection :: IO (  Maybe HostAddress
-                           -> String
-                           -> Int
-                           -> IO HTTP_SHIM.Connection
-                           )
-                     -> IO (  Maybe HostAddress
-                           -> String
-                           -> Int
-                           -> IO HTTP.Connection
-                           )
-convertTlsConnection
-  = fmap (\f -> \a s i -> fmap toHTTPConnection $ f a s i)
-
-convertTlsProxyConnection :: IO (  ByteString
-                                -> (HTTP_SHIM.Connection -> IO ())
-                                -> String
-                                -> Maybe HostAddress
-                                -> String
-                                -> Int
-                                -> IO HTTP_SHIM.Connection
-                                )
-                          -> IO (  ByteString
-                                -> (HTTP.Connection -> IO ())
-                                -> String
-                                -> Maybe HostAddress
-                                -> String
-                                -> Int
-                                -> IO HTTP.Connection
-                                )
-convertTlsProxyConnection
-  = fmap (\f
-         -> \b g s m s' i
-            -> fmap toHTTPConnection
-             $ f b (g . toHTTPConnection) s m s' i
-         )
-
-convert :: HTTP_SHIM.ManagerSettings -> HTTP.ManagerSettings
-convert HTTP_SHIM.ManagerSettings {..} =
-  let d = HTTP.defaultManagerSettings
-  in HTTP.ManagerSettings
-      { HTTP.managerConnCount           = HTTP.managerConnCount d
-      , HTTP.managerRawConnection       = HTTP.managerRawConnection d
-      , HTTP.managerTlsConnection       = convertTlsConnection
-                                        $ managerTlsConnection
-      , HTTP.managerTlsProxyConnection  = convertTlsProxyConnection
-                                        $ managerTlsProxyConnection
-      , HTTP.managerResponseTimeout     = HTTP.managerResponseTimeout d
-      , HTTP.managerRetryableException  = HTTP.managerRetryableException d
-      , HTTP.managerWrapIOException     = HTTP.managerWrapIOException d
-      , HTTP.managerIdleConnectionCount = HTTP.managerIdleConnectionCount d
-      , HTTP.managerModifyRequest       = HTTP.managerModifyRequest d
-      , HTTP.managerProxyInsecure       = HTTP.managerProxyInsecure d
-      , HTTP.managerProxySecure         = HTTP.managerProxySecure d
-      }
-
-
 
 {- | Create 'ManagerSettings' with no timeout using a shared TLS
      'ConnectionContext'
 -}
 defaultManagerSettings :: ConnectionContext -> HTTP.ManagerSettings
-defaultManagerSettings context
-  = convert
-  $ (TLS.mkManagerSettingsContext (Just context) def Nothing)
-          { HTTP_SHIM.managerResponseTimeout = HTTP_SHIM.responseTimeoutNone }
+defaultManagerSettings context =
+  (TLS.mkManagerSettingsContext (Just context) def Nothing)
+  {HTTP.managerResponseTimeout = HTTP.responseTimeoutNone}
+
 -- | Create a 'Session' using the 'wrecker' 'Environment', passing it to the
 --   given function.  The 'Session' will no longer be valid after that
 --   function returns.
@@ -127,11 +63,12 @@ defaultManagerSettings context
 -- This session manages cookies and uses default session manager
 -- configuration.
 withWreq :: (Session -> IO a) -> Environment -> IO a
-withWreq f env
-  = withWreqSettings (recorder env)
-                     (Just (HTTP.createCookieJar []))
-                     (defaultManagerSettings (context env))
-                     f
+withWreq f env =
+  withWreqSettings
+    (recorder env)
+    (Just (HTTP.createCookieJar []))
+    (defaultManagerSettings (context env))
+    f
 
 -- | Create a session.
 --
@@ -139,41 +76,37 @@ withWreq f env
 -- cookies.  It is intended for use with REST-like HTTP-based APIs,
 -- which typically do not use cookies.
 withWreqNoCookies :: (Session -> IO a) -> Environment -> IO a
-withWreqNoCookies f env
-  = withWreqSettings (recorder env)
-                     Nothing
-                     (defaultManagerSettings (context env))
-                     f
+withWreqNoCookies f env =
+  withWreqSettings (recorder env) Nothing (defaultManagerSettings (context env)) f
 
 -- | Create a session, using the given cookie jar and manager settings.
-withWreqSettings :: Recorder
-                 -> Maybe HTTP.CookieJar
+withWreqSettings
+  :: Recorder
+  -> Maybe HTTP.CookieJar
                  -- ^ If 'Nothing' is specified, no cookie management
                  -- will be performed.
-                 -> HTTP.ManagerSettings
-                 -> (Session -> IO a) -> IO a
-withWreqSettings recorder cookie settings f
-  = Session.withSessionControl cookie settings
-  $ \session -> f (Session session recorder)
+  -> HTTP.ManagerSettings
+  -> (Session -> IO a)
+  -> IO a
+withWreqSettings recorder cookie settings f =
+  Session.withSessionControl cookie settings $ \session -> f (Session session recorder)
 
 -- this records things. It's not ideal, but an more acurate
 -- implementation is harder. Pull requests welcome.
 withSess :: (Session.Session -> String -> IO a) -> Session -> String -> IO a
-withSess f sess key = record (sRecorder sess) key $  f (sSession sess) key
+withSess f sess key = record (sRecorder sess) key $ f (sSession sess) key
 
 withSess1 :: (Session.Session -> String -> a -> IO b) -> Session -> String -> a -> IO b
-withSess1 f sess key b = record (sRecorder sess) key $  f (sSession sess) key b
+withSess1 f sess key b = record (sRecorder sess) key $ f (sSession sess) key b
 
 -- | 'Session'-specific version of 'Network.Wreq.get'.
 get :: Session -> String -> IO (HTTP.Response L.ByteString)
 get = withSess Session.get
 
 -- | 'Session'-specific version of 'Network.Wreq.post'.
-post :: Wreq.Postable a
-     => Session
-     -> String
-     -> a
-     -> IO (HTTP.Response L.ByteString)
+post
+  :: Wreq.Postable a
+  => Session -> String -> a -> IO (HTTP.Response L.ByteString)
 post = withSess1 Session.post
 
 -- | 'Session'-specific version of 'Network.Wreq.head_'.
@@ -185,7 +118,9 @@ options :: Session -> String -> IO (HTTP.Response ())
 options = withSess Session.options
 
 -- | 'Session'-specific version of 'Network.Wreq.put'.
-put :: Wreq.Putable a => Session -> String -> a -> IO (HTTP.Response L.ByteString)
+put
+  :: Wreq.Putable a
+  => Session -> String -> a -> IO (HTTP.Response L.ByteString)
 put = withSess1 Session.put
 
 -- | 'Session'-specific version of 'Network.Wreq.delete'.
@@ -197,8 +132,9 @@ getWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response L.ByteString)
 getWith opts = withSess (Session.getWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.postWith'.
-postWith :: Wreq.Postable a => Wreq.Options -> Session -> String -> a
-         -> IO (HTTP.Response L.ByteString)
+postWith
+  :: Wreq.Postable a
+  => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
 postWith opts = withSess1 (Session.postWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.headWith'.
@@ -210,8 +146,9 @@ optionsWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response ())
 optionsWith opts = withSess (Session.optionsWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.putWith'.
-putWith :: Wreq.Putable a => Wreq.Options -> Session -> String -> a
-        -> IO (HTTP.Response L.ByteString)
+putWith
+  :: Wreq.Putable a
+  => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
 putWith opts = withSess1 (Session.putWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith'.

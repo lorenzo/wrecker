@@ -1,3 +1,0 @@
-[submodule "dependencies/http-client-tls-0.3.3-shim"]
-	path = dependencies/http-client-tls-0.3.3-shim
-	url = https://github.com/jfischoff/http-client

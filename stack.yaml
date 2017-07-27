@@ -8,11 +8,6 @@ docker:
   enable: false
   repo: fpco/stack-build
 extra-deps:
-- authenticate-oauth-1.5.1.2
-- haskell-src-meta-0.7.0
-- microlens-0.4.7.0
-- microlens-th-0.4.1.0
 - threads-extras-0.1.0.2
 - unagi-chan-0.4.0.0
-- vty-5.11
-resolver: lts-8.5
+resolver: lts-9.0

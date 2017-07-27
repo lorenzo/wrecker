@@ -9,27 +9,27 @@
 {-# LANGUAGE CPP, RecordWildCards #-}
 
 module Network.Wreq.Wrecker
-  ( Session
-  , defaultManagerSettings
-  -- * Session Creation
-  , withWreq
-  , withWreqNoCookies
-  , withWreqSettings
-  -- * HTTP Methods
-  , get
-  , post
-  , head_
-  , options
-  , put
-  , delete
-  -- * HTTP Methods with Options
-  , getWith
-  , postWith
-  , headWith
-  , optionsWith
-  , putWith
-  , deleteWith
-  ) where
+    ( Session
+    , defaultManagerSettings
+    -- * Session Creation
+    , withWreq
+    , withWreqNoCookies
+    , withWreqSettings
+    -- * HTTP Methods
+    , get
+    , post
+    , head_
+    , options
+    , put
+    , delete
+    -- * HTTP Methods with Options
+    , getWith
+    , postWith
+    , headWith
+    , optionsWith
+    , putWith
+    , deleteWith
+    ) where
 
 import qualified Data.ByteString.Lazy as L
 import Data.Default (def)
@@ -44,17 +44,17 @@ import Wrecker
     or 'withWreqSettings'. All HTTP calls require a 'Session'.
 -}
 data Session = Session
-  { sSession :: Session.Session
-  , sRecorder :: Recorder
-  }
+    { sSession :: Session.Session
+    , sRecorder :: Recorder
+    }
 
 {- | Create 'ManagerSettings' with no timeout using a shared TLS
      'ConnectionContext'
 -}
 defaultManagerSettings :: ConnectionContext -> HTTP.ManagerSettings
 defaultManagerSettings context =
-  (TLS.mkManagerSettingsContext (Just context) def Nothing)
-  {HTTP.managerResponseTimeout = HTTP.responseTimeoutNone}
+    (TLS.mkManagerSettingsContext (Just context) def Nothing)
+    {HTTP.managerResponseTimeout = HTTP.responseTimeoutNone}
 
 -- | Create a 'Session' using the 'wrecker' 'Environment', passing it to the
 --   given function.  The 'Session' will no longer be valid after that
@@ -64,11 +64,11 @@ defaultManagerSettings context =
 -- configuration.
 withWreq :: (Session -> IO a) -> Environment -> IO a
 withWreq f env =
-  withWreqSettings
-    (recorder env)
-    (Just (HTTP.createCookieJar []))
-    (defaultManagerSettings (context env))
-    f
+    withWreqSettings
+        (recorder env)
+        (Just (HTTP.createCookieJar []))
+        (defaultManagerSettings (context env))
+        f
 
 -- | Create a session.
 --
@@ -77,19 +77,19 @@ withWreq f env =
 -- which typically do not use cookies.
 withWreqNoCookies :: (Session -> IO a) -> Environment -> IO a
 withWreqNoCookies f env =
-  withWreqSettings (recorder env) Nothing (defaultManagerSettings (context env)) f
+    withWreqSettings (recorder env) Nothing (defaultManagerSettings (context env)) f
 
 -- | Create a session, using the given cookie jar and manager settings.
-withWreqSettings
-  :: Recorder
-  -> Maybe HTTP.CookieJar
+withWreqSettings ::
+       Recorder
+    -> Maybe HTTP.CookieJar
                  -- ^ If 'Nothing' is specified, no cookie management
                  -- will be performed.
-  -> HTTP.ManagerSettings
-  -> (Session -> IO a)
-  -> IO a
+    -> HTTP.ManagerSettings
+    -> (Session -> IO a)
+    -> IO a
 withWreqSettings recorder cookie settings f =
-  Session.withSessionControl cookie settings $ \session -> f (Session session recorder)
+    Session.withSessionControl cookie settings $ \session -> f (Session session recorder)
 
 -- this records things. It's not ideal, but an more acurate
 -- implementation is harder. Pull requests welcome.
@@ -104,9 +104,7 @@ get :: Session -> String -> IO (HTTP.Response L.ByteString)
 get = withSess Session.get
 
 -- | 'Session'-specific version of 'Network.Wreq.post'.
-post
-  :: Wreq.Postable a
-  => Session -> String -> a -> IO (HTTP.Response L.ByteString)
+post :: Wreq.Postable a => Session -> String -> a -> IO (HTTP.Response L.ByteString)
 post = withSess1 Session.post
 
 -- | 'Session'-specific version of 'Network.Wreq.head_'.
@@ -118,9 +116,7 @@ options :: Session -> String -> IO (HTTP.Response ())
 options = withSess Session.options
 
 -- | 'Session'-specific version of 'Network.Wreq.put'.
-put
-  :: Wreq.Putable a
-  => Session -> String -> a -> IO (HTTP.Response L.ByteString)
+put :: Wreq.Putable a => Session -> String -> a -> IO (HTTP.Response L.ByteString)
 put = withSess1 Session.put
 
 -- | 'Session'-specific version of 'Network.Wreq.delete'.
@@ -132,9 +128,8 @@ getWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response L.ByteString)
 getWith opts = withSess (Session.getWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.postWith'.
-postWith
-  :: Wreq.Postable a
-  => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
+postWith ::
+       Wreq.Postable a => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
 postWith opts = withSess1 (Session.postWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.headWith'.
@@ -146,9 +141,8 @@ optionsWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response ())
 optionsWith opts = withSess (Session.optionsWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.putWith'.
-putWith
-  :: Wreq.Putable a
-  => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
+putWith ::
+       Wreq.Putable a => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
 putWith opts = withSess1 (Session.putWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith'.

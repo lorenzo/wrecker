@@ -7,31 +7,30 @@ benchmarking a series of dependent requests.
 import 'Network.Wreq.Wrecker' to write clients and 'Wrecker' to run the
 them with either 'defaultMain' or 'run'.
 
-See https://github.com/skedgeme/wrecker#readme for more information.
+See https://github.com/lorenzo/wrecker#readme for more information.
 -}
-module Wrecker (-- * Entry Points
-                 defaultMain
-               , run
-               , runOne
+module Wrecker -- * Entry Points
+    ( defaultMain
+    , run
+    , runOne
                -- * Wrecker State
-               , Environment      (..)
+    , Environment(..)
                -- * Recorder
-               , Recorder
-               , record
+    , Recorder
+    , record
                -- * Options
-               , Options          (..)
-               , URLDisplay       (..)
-               , RunType          (..)
-               , DisplayMode      (..)
-               , defaultOptions
+    , Options(..)
+    , URLDisplay(..)
+    , RunType(..)
+    , DisplayMode(..)
+    , defaultOptions
                -- Output Statistics
-               , AllStats         (..)
-               , ResultStatistics (..)
+    , AllStats(..)
+    , ResultStatistics(..)
+    ) where
 
-
-               ) where
-import Wrecker.Recorder
 import Wrecker.Main
 import Wrecker.Options
+import Wrecker.Recorder
 import Wrecker.Runner
 import Wrecker.Statistics

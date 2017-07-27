@@ -80,8 +80,10 @@ library
                , vector                 >= 0.10.12
                , vty                    >= 5.11
                , wreq                   >= 0.5.0
+               , authenticate-oauth     >= 1.5.1.2
+               , threads-extras         >= 0.1.0.2
   default-language:    Haskell2010
-  ghc-options:         -Wall -fno-warn-unused-do-bind -pgmL markdown-unlit
+  ghc-options:         -Wall -fno-warn-unused-do-bind
 
 executable wreck
   hs-source-dirs:      app
@@ -96,67 +98,7 @@ executable wreck
                      , lens
 
   cpp-options: -D_SERVER_IS_MAIN_
-  ghc-options: -O2 -Wall -fno-warn-unused-do-bind -threaded -pgmL markdown-unlit -rtsopts "-with-rtsopts=-N -I0 -qg"
-  default-language:    Haskell2010
-
-executable example-server
-  hs-source-dirs:      examples
-  main-is:             Server.hs
-  build-depends:       base
-                     , wrecker
-                     , scotty
-                     , aeson-qq
-                     , warp >= 3.2.4
-                     , markdown-unlit
-                     , aeson
-                     , text
-                     , immortal
-                     , next-ref
-                     , wai
-                     , network
-                     , transformers
-  cpp-options: -D_SERVER_IS_MAIN_
-  ghc-options: -O2 -Wall -fno-warn-unused-do-bind -threaded -pgmL markdown-unlit -rtsopts "-with-rtsopts=-N -I0 -qg"
-  default-language:    Haskell2010
-
-executable example-client
-  hs-source-dirs:      examples
-  main-is:             Client.lhs
-  build-depends:       base
-                     , wrecker
-                     , wreq
-                     , markdown-unlit
-                     , aeson
-                     , bytestring
-                     , text
-                     , http-client
-                     , connection
-  cpp-options: -D_CLIENT_IS_MAIN_
-  ghc-options: -O2 -Wall -fno-warn-unused-do-bind -threaded -pgmL markdown-unlit -rtsopts "-with-rtsopts=-N -I0 -qg"
-  default-language:    Haskell2010
-
-executable example
-  hs-source-dirs:      examples
-  main-is:             Main.lhs
-  build-depends:       base
-                     , wrecker
-                     , scotty
-                     , aeson-qq
-                     , warp >= 3.2.4
-                     , wreq
-                     , markdown-unlit
-                     , aeson
-                     , bytestring
-                     , text
-                     , http-client
-                     , connection
-                     , immortal
-                     , next-ref
-                     , wai
-                     , network
-                     , connection
-                     , transformers
-  ghc-options: -O2 -Wall -fno-warn-unused-do-bind -threaded -pgmL markdown-unlit  -rtsopts "-with-rtsopts=-N -I0 -qg"
+  ghc-options: -O2 -Wall -fno-warn-unused-do-bind -threaded -rtsopts "-with-rtsopts=-N -I0 -qg"
   default-language:    Haskell2010
 
 test-suite wrecker-test
@@ -188,4 +130,4 @@ test-suite wrecker-test
 
 source-repository head
     type:     git
-    location: https://github.com/skedgeme/wrecker
+    location: https://github.com/lorenzo/wrecker

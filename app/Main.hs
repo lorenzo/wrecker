@@ -4,7 +4,6 @@ import Data.Monoid
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Options.Applicative
-import Options.Applicative.Builder
 import Wrecker
 import Wrecker.Options
 

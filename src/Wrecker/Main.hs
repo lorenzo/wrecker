@@ -1,8 +1,11 @@
-module Wrecker.Main (defaultMain) where
-import Wrecker.Runner  (run)
-import Wrecker.Options (runParser)
-import Wrecker.Runner (Environment)
+module Wrecker.Main
+    ( defaultMain
+    ) where
+
 import Control.Monad (void)
+import Wrecker.Options (runParser)
+import Wrecker.Runner (run)
+import Wrecker.Runner (Environment)
 
 {- | 'defaultMain' is typically the main entry point for 'wrecker' benchmarks.
      'defaultMain' will parse all command line arguments and then call 'run'

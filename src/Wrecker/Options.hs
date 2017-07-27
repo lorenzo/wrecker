@@ -1,11 +1,10 @@
-{-# LANGUAGE RecordWildCards, CPP #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Wrecker.Options where
 
 import Control.Exception
 import Data.Monoid
 import Options.Applicative
-import Options.Applicative.Builder
 import Wrecker.Logger
 
 {- | There are two typical ways to invoke 'wrecker'. 'RunCount' will execute
@@ -58,6 +57,8 @@ data Options = Options
     , silent :: Bool
       -- ^ Set 'silent' to true to disable all output.
     , urlDisplay :: URLDisplay
+    , recordQuery :: Bool
+      -- ^ Set 'recordQuery' to consider the query string as a different URL
     } deriving (Show, Eq)
 
 -- | 'defaultOptions' provides sensible default for the 'Options'
@@ -76,6 +77,7 @@ defaultOptions =
     , outputFilePath = Nothing
     , silent = False
     , urlDisplay = Path
+    , recordQuery = False
     }
 
 data PartialOptions = PartialOptions
@@ -90,6 +92,7 @@ data PartialOptions = PartialOptions
     , mOutputFilePath :: Maybe FilePath
     , mSilent :: Maybe Bool
     , murlDisplay :: Maybe URLDisplay
+    , mRecordQuery :: Maybe Bool
     } deriving (Show, Eq)
 
 instance Monoid PartialOptions where
@@ -106,6 +109,7 @@ instance Monoid PartialOptions where
         , mOutputFilePath = outputFilePath defaultOptions
         , mSilent = Just $ silent defaultOptions
         , murlDisplay = Just $ urlDisplay defaultOptions
+        , mRecordQuery = Just $ recordQuery defaultOptions
         }
     mappend x y =
         PartialOptions
@@ -120,6 +124,7 @@ instance Monoid PartialOptions where
         , mOutputFilePath = mOutputFilePath x <|> mOutputFilePath y
         , mSilent = mSilent x <|> mSilent y
         , murlDisplay = murlDisplay x <|> murlDisplay y
+        , mRecordQuery = mRecordQuery x <|> mRecordQuery y
         }
 
 completeOptions :: PartialOptions -> Maybe Options
@@ -136,6 +141,7 @@ completeOptions options =
                        , mOutputFilePath = outputFilePath
                        , mSilent = Just silent
                        , murlDisplay = Just urlDisplay
+                       , mRecordQuery = Just recordQuery
                        } -> Just $ Options {..}
         _ -> Nothing
 
@@ -152,25 +158,38 @@ pPartialOptions :: Parser PartialOptions
 pPartialOptions =
     PartialOptions <$>
     optionalOption (long "concurrency" <> help "Number of threads for concurrent requests") <*>
+    --
     optionalOption (long "bin-count" <> help "Number of bins for latency histogram") <*>
+    --
     optional
         (RunCount <$> option auto (long "run-count" <> help "number of times to repeat") <|>
          RunTimed <$> option auto (long "run-timed" <> help "number of seconds to repeat")) <*>
+    --
     optionalOption (long "timeout-time" <> help "How long to wait for all requests to finish") <*>
+    --
     optional
         (NonInteractive <$ switch (long "non-interactive") <|>
          Interactive <$ switch (long "interactive")) <*>
+    --
     optionalOption
         (long "log-level" <> help "Log to stderr events of criticality greater than the LOG_LEVEL") <*>
+    --
     optionalStrOption (long "match" <> help "Only run tests that match the glob") <*>
+    --
     optionalOption (long "request-name-size" <> help "Request name size for the terminal display") <*>
+    --
     optionalStrOption
         (long "output-path" <> help "Save a JSON file of the the statistics to given path") <*>
     optionalSwitch (long "silent" <> help "Disable all output") <*>
+    --
     optional
         (Path <$ switch (long "relative-url-display") <|>
-         Full <$ switch (long "absolute-url-display"))
+         Full <$ switch (long "absolute-url-display")) <*>
+    --
+    optionalSwitch
+        (long "record-query" <> help "Take in consideration the query string for the report")
 
+--
 {- | Run the command line parse and return the 'Options'
 
 'runParser' can parse the following options
@@ -182,7 +201,7 @@ pPartialOptions =
 > Usage: example [--concurrency ARG] [--bin-count ARG] ([--run-count ARG] |
 >                [--run-timed ARG]) [--timeout-time ARG] [--display-mode ARG]
 >                [--log-level ARG] [--match ARG] [--request-name-size ARG]
->                [--output-path ARG] [--silent]
+>                [--output-path ARG] [--silent] [--record-query]
 >  Welcome to wrecker
 >
 > Available options:
@@ -198,6 +217,7 @@ pPartialOptions =
 >  --request-name-size ARG  Request name size for the terminal display
 >  --output-path ARG        Save a JSON file of the the statistics to given path
 >  --silent                 Disable all output
+>  --record-query           Take in consideration the query string for the report
 -}
 runParser :: IO Options
 runParser = do

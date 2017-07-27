@@ -1,50 +1,51 @@
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, LambdaCase, BangPatterns  #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, LambdaCase,
+  BangPatterns #-}
 {-# LANGUAGE TupleSections, CPP #-}
+
 module Wrecker.Runner where
-import Wrecker.Logger
-import System.Posix.Signals
-import Data.Function
-import qualified Control.Concurrent.Thread.BoundedThreadGroup as BoundedThreadGroup
+
 import Control.Concurrent
-import Control.Exception
-import Wrecker.Recorder
-import Wrecker.Statistics
-import Control.Monad
-import Data.Foldable (for_)
-import System.Timeout
-import qualified Graphics.Vty            as VTY
 import Control.Concurrent.NextRef
-import Wrecker.Options
-import Data.IORef
-import System.IO
-import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
-import Data.List (isInfixOf)
+import qualified Control.Concurrent.Thread.BoundedThreadGroup
+       as BoundedThreadGroup
+import Control.Exception
+import qualified Control.Immortal as Immortal
+import Control.Monad
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as BSL
+import Data.Foldable (for_)
+import Data.Function
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
-import qualified Control.Immortal as Immortal
-import qualified Network.HTTP.Client as HTTP
+import Data.IORef
+import Data.List (isInfixOf)
 import Data.Maybe
+import qualified Graphics.Vty as VTY
 import Network.Connection (ConnectionContext)
 import qualified Network.Connection as Connection
+import qualified Network.HTTP.Client as HTTP
+import System.IO
+import System.Posix.Signals
+import System.Timeout
+import Wrecker.Logger
+import Wrecker.Options
+import Wrecker.Recorder
+import Wrecker.Statistics
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
 #endif
-
 -- TODO configure whether errors are used in times or not
-
 -- | The 'Environment' holds state necessary to make and record HTTP calls.
 data Environment = Environment
-  { recorder :: Recorder
+    { recorder :: Recorder
   -- ^ The 'Recorder' can be used with the 'record' function to ... record times.
-  , context  :: ConnectionContext
+    , context :: ConnectionContext
   -- ^ Provided as a convience, this is a shared TLS context to reuse for
   --   better performance.
-  }
+    }
 
-{- | Typically 'wrecker' will control benchmarking actions. Howeve,r in some situations
+{- | Typically 'wrecker' will control benchmarking actions. However in some situations
      a benchmark might require more control.
 
      To facilitate more complex scenarios 'wrecker' provide 'newStandaloneRecorder'
@@ -53,108 +54,88 @@ data Environment = Environment
 -}
 newStandaloneRecorder :: IO (NextRef AllStats, Immortal.Thread, Recorder)
 newStandaloneRecorder = do
-  recorder      <- newRecorder 10000
-  logger        <- newStdErrLogger 1000 LevelError
-  (ref, thread) <- sinkRecorder logger recorder
-  return (ref, thread, recorder)
+    recorder <- newRecorder True 10000
+    logger <- newStdErrLogger 1000 LevelError
+    (ref, thread) <- sinkRecorder logger recorder
+    return (ref, thread, recorder)
 
 sinkRecorder :: Logger -> Recorder -> IO (NextRef AllStats, Immortal.Thread)
 sinkRecorder logger recorder = do
-  ref <- newNextRef emptyAllStats
-
-  immortal <- Immortal.createWithLabel "collectEvent"
-            $ \_ -> collectEvent logger ref recorder
-
-  return (ref, immortal)
+    ref <- newNextRef emptyAllStats
+    immortal <- Immortal.createWithLabel "collectEvent" $ \_ -> collectEvent logger ref recorder
+    return (ref, immortal)
 
 updateSampler :: NextRef AllStats -> Event -> IO AllStats
-updateSampler !ref !event = modifyNextRef ref
-                        $ \x -> let !new = stepAllStats x
-                                                        (eRunIndex event)
-                                                        (name $ eResult event)
-                                                        (eResult        event)
-                                in (new, new)
+updateSampler !ref !event =
+    modifyNextRef ref $ \x ->
+        let !new = stepAllStats x (eRunIndex event) (name $ eResult event) (eResult event)
+        in (new, new)
 
 collectEvent :: Logger -> NextRef AllStats -> Recorder -> IO ()
-collectEvent logger ref recorder = fix $ \next -> do
-  mevent <- readEvent recorder
-  for_ mevent $ \event -> do
-    sampler <- updateSampler ref event
-    logDebug logger $ show sampler
-    next
+collectEvent logger ref recorder =
+    fix $ \next -> do
+        mevent <- readEvent recorder
+        for_ mevent $ \event -> do
+            sampler <- updateSampler ref event
+            logDebug logger $ show sampler
+            next
 
-runAction :: Logger
-          -> Int
-          -> Int
-          -> RunType
-          -> (Environment -> IO ())
-          -> Environment -> IO ()
+runAction :: Logger -> Int -> Int -> RunType -> (Environment -> IO ()) -> Environment -> IO ()
 runAction logger timeoutTime concurrency runStyle action env = do
-  threadLimit <- BoundedThreadGroup.new concurrency
-  recorderRef <- newIORef $ recorder env
-
-  let takeRecorder = atomicModifyIORef' recorderRef $ \x -> (split x, x)
-      actionThread = void
-                   $ BoundedThreadGroup.forkIO threadLimit $ do
-                     rec <- takeRecorder
-                     handle (\(e :: SomeException) -> do
-                              case fromException e of
-                                Just (he :: HTTP.HttpException)
-                                  -> void $ logWarn logger $ show he
-                                Nothing -> do
-                                  logWarn logger $ show e
-                                  addEvent (recorder env) $ Error
-                                                       { resultTime = 0
-                                                       , exception  = e
-                                                       , name       = "__UNKNOWN__"
-                                                       }
-                                  addEvent rec End
-                            )
-                            $ do
-                                action (env { recorder = rec })
-                                addEvent rec End
-
-
-  case runStyle of
-    RunCount count -> replicateM_ (count * concurrency) actionThread
-    RunTimed time  -> void $ timeout (time * 1000000) $ forever actionThread
-
-  mtimeout <- timeout timeoutTime $ BoundedThreadGroup.wait threadLimit
-  case mtimeout of
-    Nothing -> void
-             $ logError logger
-             $ "Timed out waiting for all "
-             ++ "threads to complete"
-    Just ()  -> return ()
+    threadLimit <- BoundedThreadGroup.new concurrency
+    recorderRef <- newIORef $ recorder env
+    let takeRecorder = atomicModifyIORef' recorderRef $ \x -> (split x, x)
+        actionThread =
+            void $
+            BoundedThreadGroup.forkIO threadLimit $ do
+                rec <- takeRecorder
+                handle
+                    (\(e :: SomeException) -> do
+                         case fromException e of
+                             Just (he :: HTTP.HttpException) -> void $ logWarn logger $ show he
+                             Nothing -> do
+                                 logWarn logger $ show e
+                                 addEvent (recorder env) $
+                                     Error {resultTime = 0, exception = e, name = "__UNKNOWN__"}
+                                 addEvent rec End) $ do
+                    action (env {recorder = rec})
+                    addEvent rec End
+    case runStyle of
+        RunCount count -> replicateM_ (count * concurrency) actionThread
+        RunTimed time -> void $ timeout (time * 1000000) $ forever actionThread
+    mtimeout <- timeout timeoutTime $ BoundedThreadGroup.wait threadLimit
+    case mtimeout of
+        Nothing -> void $ logError logger $ "Timed out waiting for all " ++ "threads to complete"
+        Just () -> return ()
 
 ------------------------------------------------------------------------------
 ---   Generic Run Function
 -------------------------------------------------------------------------------
-runWithNextVar :: Options
-              -> (NextRef AllStats -> IO ())
-              -> (NextRef AllStats -> IO ())
-              -> (Environment -> IO ())
-              -> IO AllStats
+runWithNextVar ::
+       Options
+    -> (NextRef AllStats -> IO ())
+    -> (NextRef AllStats -> IO ())
+    -> (Environment -> IO ())
+    -> IO AllStats
 runWithNextVar (Options {..}) consumer final action = do
-  recorder <- newRecorder 100000
-  context <- Connection.initConnectionContext
-  sampler  <- newNextRef emptyAllStats
-  logger   <- newStdErrLogger 100000 logLevel
+    recorder <- newRecorder recordQuery 100000
+    context <- Connection.initConnectionContext
+    sampler <- newNextRef emptyAllStats
+    logger <- newStdErrLogger 100000 logLevel
   -- Collect events and
-  forkIO $ handle (\(e :: SomeException) -> void $ logError logger $ show e)
-         $ collectEvent logger sampler recorder
+    forkIO $
+        handle (\(e :: SomeException) -> void $ logError logger $ show e) $
+        collectEvent logger sampler recorder
+    consumer sampler
+    logDebug logger "Starting Runs"
+    let env = Environment {..}
+    runAction logger timeoutTime concurrency runStyle action env `finally`
+        (do logDebug logger "Shutting Down"
+            stopRecorder recorder
+            shutdownLogger 1000000 logger
+            final sampler)
+    readLast sampler
 
-  consumer sampler
-
-  logDebug logger "Starting Runs"
-  let env = Environment {..}
-  runAction logger timeoutTime concurrency runStyle action env `finally`
-    (do logDebug logger "Shutting Down"
-        stopRecorder recorder
-        shutdownLogger 1000000 logger
-        final sampler
-    )
-  readLast sampler
 -------------------------------------------------------------------------------
 ---   Non-interactive Rendering
 -------------------------------------------------------------------------------
@@ -163,80 +144,68 @@ printLastSamples options sampler = printStats options =<< readLast sampler
 
 runNonInteractive :: Options -> (Environment -> IO ()) -> IO AllStats
 runNonInteractive options action = do
-  let shutdown sampler = do
-        putStrLn ""
-        hFlush stdout
-        hSetBuffering stdout (BlockBuffering (Just 100000000))
-        printLastSamples options sampler
-        hFlush stdout
-        for_ (outputFilePath options) $ \filePath ->
-          BSL.writeFile filePath . encode =<< readLast sampler
+    let shutdown sampler = do
+            putStrLn ""
+            hFlush stdout
+            hSetBuffering stdout (BlockBuffering (Just 100000000))
+            printLastSamples options sampler
+            hFlush stdout
+            for_ (outputFilePath options) $ \filePath ->
+                BSL.writeFile filePath . encode =<< readLast sampler
+    runWithNextVar options (const $ return ()) shutdown action
 
-  runWithNextVar options (const $ return ()) shutdown action
 -------------------------------------------------------------------------------
 ---   Interactive Rendering
 -------------------------------------------------------------------------------
-printLoop :: Options
-          -> VTY.DisplayContext
-          -> VTY.Vty
-          -> NextRef AllStats
-          -> IO ()
-printLoop options context vty sampler
-  = fix $ \next -> takeNextRef sampler >>= \case
-      Nothing      -> return ()
-      Just allStats -> do
-        updateUI (requestNameColumnSize options)
-                 (urlDisplay options)
-                 context
-                 allStats
-        VTY.refresh vty
-        threadDelay 100000
-        next
+printLoop :: Options -> VTY.DisplayContext -> VTY.Vty -> NextRef AllStats -> IO ()
+printLoop options context vty sampler =
+    fix $ \next ->
+        takeNextRef sampler >>= \case
+            Nothing -> return ()
+            Just allStats -> do
+                updateUI (requestNameColumnSize options) (urlDisplay options) context allStats
+                VTY.refresh vty
+                threadDelay 100000
+                next
 
 processInputForCtrlC :: TChan VTY.Event -> IO ThreadId
-processInputForCtrlC chan = forkIO $ forever $ do
-  event <- atomically $ readTChan chan
-  case event of
-    VTY.EvKey (VTY.KChar 'c') [VTY.MCtrl] -> raiseSignal sigINT
-    _ -> return ()
+processInputForCtrlC chan =
+    forkIO $
+    forever $ do
+        event <- atomically $ readTChan chan
+        case event of
+            VTY.EvKey (VTY.KChar 'c') [VTY.MCtrl] -> raiseSignal sigINT
+            _ -> return ()
 
-updateUI :: Maybe Int -> URLDisplay -> VTY.DisplayContext ->  AllStats -> IO ()
-updateUI nameSize urlDisp displayContext stats
-  = VTY.outputPicture displayContext
-  $ VTY.picForImage
-  $ VTY.vertCat
-  $ map (VTY.string VTY.defAttr)
-  $ lines
-  $ pprStats nameSize urlDisp stats
+updateUI :: Maybe Int -> URLDisplay -> VTY.DisplayContext -> AllStats -> IO ()
+updateUI nameSize urlDisp displayContext stats =
+    VTY.outputPicture displayContext $
+    VTY.picForImage $
+    VTY.vertCat $ map (VTY.string VTY.defAttr) $ lines $ pprStats nameSize urlDisp stats
 
 runInteractive :: Options -> (Environment -> IO ()) -> IO AllStats
 runInteractive options action = do
-  vtyConfig       <- VTY.standardIOConfig
-  vty             <- VTY.mkVty vtyConfig
-  let output       = VTY.outputIface vty
-  (width, height) <- VTY.displayBounds output
-  displayContext  <- VTY.displayContext output (width, height)
-  inputThread     <- processInputForCtrlC $ VTY._eventChannel $ VTY.inputIface vty
+    vtyConfig <- VTY.standardIOConfig
+    vty <- VTY.mkVty vtyConfig
+    let output = VTY.outputIface vty
+    (width, height) <- VTY.displayBounds output
+    displayContext <- VTY.displayContext output (width, height)
+    inputThread <- processInputForCtrlC $ VTY._eventChannel $ VTY.inputIface vty
+    let shutdown sampler = do
+            killThread inputThread
+            VTY.shutdown vty
+            putStrLn ""
+            hSetBuffering stdout (BlockBuffering (Just 100000000))
+            printLastSamples options sampler
+            hFlush stdout
+            for_ (outputFilePath options) $ \filePath ->
+                BSL.writeFile filePath . encode =<< readLast sampler
+    runWithNextVar
+        options
+        (\sampler -> void $ forkIO (printLoop options displayContext vty sampler))
+        shutdown
+        action
 
-  let shutdown sampler = do
-          killThread inputThread
-          VTY.shutdown vty
-          putStrLn ""
-          hSetBuffering stdout (BlockBuffering (Just 100000000))
-          printLastSamples options sampler
-          hFlush stdout
-          for_ (outputFilePath options) $ \filePath ->
-            BSL.writeFile filePath . encode =<< readLast sampler
-
-  runWithNextVar options (\sampler -> void
-                                    $ forkIO (printLoop options
-                                                        displayContext
-                                                        vty
-                                                        sampler
-                                             )
-                         )
-                         shutdown
-                         action
 -------------------------------------------------------------------------------
 ---   Main Entry Point
 -------------------------------------------------------------------------------
@@ -249,22 +218,20 @@ runInteractive options action = do
 --    benchmark.
 run :: Options -> [(String, Environment -> IO ())] -> IO (HashMap String AllStats)
 run options actions = do
-  hSetBuffering stderr LineBuffering
-
-  fmap H.fromList . forM actions $ \(groupName, action) -> do
-    if (match options `isInfixOf` groupName) then do
-      putStrLn groupName
-      (groupName, ) <$> case displayMode options of
-        NonInteractive -> runNonInteractive options action
-        Interactive    -> runInteractive    options action
-    else
-      return (groupName, emptyAllStats)
+    hSetBuffering stderr LineBuffering
+    fmap H.fromList . forM actions $ \(groupName, action) -> do
+        if (match options `isInfixOf` groupName)
+            then do
+                putStrLn groupName
+                (groupName, ) <$>
+                    case displayMode options of
+                        NonInteractive -> runNonInteractive options action
+                        Interactive -> runInteractive options action
+            else return (groupName, emptyAllStats)
 
 {-| Run a single benchmark
 -}
 runOne :: Options -> (Environment -> IO ()) -> IO AllStats
-runOne options f
-   =  let key = ""
-   in fromMaybe (error "runOne: impossible!")
-   .  H.lookup key
-  <$> run options [(key, f)]
+runOne options f =
+    let key = ""
+    in fromMaybe (error "runOne: impossible!") . H.lookup key <$> run options [(key, f)]

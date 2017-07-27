@@ -33,22 +33,23 @@ data Event = Event
 --   To obtain a 'Recorder' use either 'run', 'defaultMain', 'runOne' or
 --   'newStandaloneRecorder'.
 data Recorder = Recorder
-    { rRunIndex :: !Int
+    { rWithQuery :: !Bool
+    , rRunIndex :: !Int
     , rQueue :: !(TBMQueue Event)
     }
 
 -- The bound here should be configurable
 split :: Recorder -> Recorder
-split Recorder {..} = Recorder (rRunIndex + 1) rQueue
+split Recorder {..} = Recorder rWithQuery (rRunIndex + 1) rQueue
 
-newRecorder :: Int -> IO Recorder
-newRecorder maxSize = Recorder 0 <$> newTBMQueueIO maxSize
+newRecorder :: Bool -> Int -> IO Recorder
+newRecorder withQuery maxSize = Recorder withQuery 0 <$> newTBMQueueIO maxSize
 
 stopRecorder :: Recorder -> IO ()
 stopRecorder = atomically . closeTBMQueue . rQueue
 
 addEvent :: Recorder -> RunResult -> IO ()
-addEvent (Recorder runIndex queue) runResult =
+addEvent (Recorder _ runIndex queue) runResult =
     atomically $ writeTBMQueue queue $ Event runIndex runResult
 
 readEvent :: Recorder -> IO (Maybe Event)
@@ -65,13 +66,17 @@ readEvent = atomically . readTBMQueue . rQueue
 -}
 record :: forall a. Recorder -> String -> IO a -> IO a
 record recorder key action = do
+    let cleanKey =
+            if rWithQuery recorder
+                then key
+                else takeWhile (/= '?') key -- Remove the query string
     startTime <- getTime Monotonic
     let recordAction :: IO a
         recordAction = do
             r <- action
             endTime <- getTime Monotonic
             let !elapsedTime' = diffSeconds endTime startTime
-            addEvent recorder $ Success {resultTime = elapsedTime', name = key}
+            addEvent recorder $ Success {resultTime = elapsedTime', name = cleanKey}
             return r
         recordException :: HTTP.HttpException -> IO a
         recordException e = do
@@ -81,14 +86,17 @@ record recorder key action = do
                     let code = HTTP.statusCode $ HTTP.responseStatus resp
                     addEvent recorder $
                         ErrorStatus
-                        {resultTime = diffSeconds endTime startTime, errorCode = code, name = key}
+                        { resultTime = diffSeconds endTime startTime
+                        , errorCode = code
+                        , name = cleanKey
+                        }
                 _ ->
                     addEvent recorder $
                     Error
                     { resultTime = diffSeconds endTime startTime
                     , exception = toException e
-                    , name = key
+                    , name = cleanKey
                     }
-        -- rethrow no matter what
+            -- rethrow no matter what
             throwIO e
     handle recordException recordAction

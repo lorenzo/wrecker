@@ -29,7 +29,7 @@ To see the options defaultMain can parse call `--help`
 > Usage: example [--concurrency ARG] [--bin-count ARG] ([--run-count ARG] |
 >                [--run-timed ARG]) [--timeout-time ARG] [--display-mode ARG]
 >                [--log-level ARG] [--match ARG] [--request-name-size ARG]
->                [--output-path ARG] [--silent]
+>                [--output-path ARG] [--silent] [--record-query]
 >  Welcome to wrecker
 >
 > Available options:
@@ -45,6 +45,7 @@ To see the options defaultMain can parse call `--help`
 >  --request-name-size ARG  Request name size for the terminal display
 >  --output-path ARG        Save a JSON file of the the statistics to given path
 >  --silent                 Disable all output
+>  --record-query           Take in consideration the query string for the report
 
 -}
 defaultMain :: [(String, Environment -> IO ())] -> IO ()

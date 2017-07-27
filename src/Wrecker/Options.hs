@@ -57,8 +57,11 @@ data Options = Options
     , silent :: Bool
       -- ^ Set 'silent' to true to disable all output.
     , urlDisplay :: URLDisplay
+    -- ^ Whether to display short of full URLs in the report
     , recordQuery :: Bool
       -- ^ Set 'recordQuery' to consider the query string as a different URL
+    , listTestGroups :: Bool
+    -- ^ Show the list of exposed test groups, if any
     } deriving (Show, Eq)
 
 -- | 'defaultOptions' provides sensible default for the 'Options'
@@ -78,6 +81,7 @@ defaultOptions =
     , silent = False
     , urlDisplay = Path
     , recordQuery = False
+    , listTestGroups = False
     }
 
 data PartialOptions = PartialOptions
@@ -93,6 +97,7 @@ data PartialOptions = PartialOptions
     , mSilent :: Maybe Bool
     , murlDisplay :: Maybe URLDisplay
     , mRecordQuery :: Maybe Bool
+    , mListTestGroups :: Maybe Bool
     } deriving (Show, Eq)
 
 instance Monoid PartialOptions where
@@ -110,6 +115,7 @@ instance Monoid PartialOptions where
         , mSilent = Just $ silent defaultOptions
         , murlDisplay = Just $ urlDisplay defaultOptions
         , mRecordQuery = Just $ recordQuery defaultOptions
+        , mListTestGroups = Just $ listTestGroups defaultOptions
         }
     mappend x y =
         PartialOptions
@@ -125,6 +131,7 @@ instance Monoid PartialOptions where
         , mSilent = mSilent x <|> mSilent y
         , murlDisplay = murlDisplay x <|> murlDisplay y
         , mRecordQuery = mRecordQuery x <|> mRecordQuery y
+        , mListTestGroups = mListTestGroups x <|> mListTestGroups y
         }
 
 completeOptions :: PartialOptions -> Maybe Options
@@ -142,6 +149,7 @@ completeOptions options =
                        , mSilent = Just silent
                        , murlDisplay = Just urlDisplay
                        , mRecordQuery = Just recordQuery
+                       , mListTestGroups = Just listTestGroups
                        } -> Just $ Options {..}
         _ -> Nothing
 
@@ -187,7 +195,9 @@ pPartialOptions =
          Full <$ switch (long "absolute-url-display")) <*>
     --
     optionalSwitch
-        (long "record-query" <> help "Take in consideration the query string for the report")
+        (long "record-query" <> help "Take in consideration the query string for the report") <*>
+    --
+    optionalSwitch (long "list-test-groups" <> help "Shows the list of tests to run and exit")
 
 --
 {- | Run the command line parse and return the 'Options'
@@ -218,6 +228,7 @@ pPartialOptions =
 >  --output-path ARG        Save a JSON file of the the statistics to given path
 >  --silent                 Disable all output
 >  --record-query           Take in consideration the query string for the report
+>  --list-test-groups       Shows the list of tests to run and exit
 -}
 runParser :: IO Options
 runParser = do

@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, LambdaCase,
   BangPatterns #-}
-{-# LANGUAGE TupleSections, CPP #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Wrecker.Runner where
 
@@ -25,6 +26,7 @@ import qualified Graphics.Vty as VTY
 import Network.Connection (ConnectionContext)
 import qualified Network.Connection as Connection
 import qualified Network.HTTP.Client as HTTP
+import System.Exit
 import System.IO
 import System.Posix.Signals
 import System.Timeout
@@ -32,9 +34,7 @@ import Wrecker.Logger
 import Wrecker.Options
 import Wrecker.Recorder
 import Wrecker.Statistics
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif
+
 -- TODO configure whether errors are used in times or not
 -- | The 'Environment' holds state necessary to make and record HTTP calls.
 data Environment = Environment
@@ -217,6 +217,9 @@ runInteractive options action = do
 --    Like 'defaultMain', 'run' creates a 'Recorder' and passes it each
 --    benchmark.
 run :: Options -> [(String, Environment -> IO ())] -> IO (HashMap String AllStats)
+run (Options {listTestGroups = True}) actions = do
+    showTestGroups actions
+    return H.empty
 run options actions = do
     hSetBuffering stderr LineBuffering
     fmap H.fromList . forM actions $ \(groupName, action) -> do
@@ -228,6 +231,21 @@ run options actions = do
                         NonInteractive -> runNonInteractive options action
                         Interactive -> runInteractive options action
             else return (groupName, emptyAllStats)
+
+showTestGroups :: [(String, Environment -> IO ())] -> IO ()
+showTestGroups [] = do
+    hSetBuffering stderr LineBuffering
+    hPutStrLn stderr noTestsGroupsError
+    exitFailure
+  where
+    noTestsGroupsError =
+        "This executable has no pre-configured tests groups. \n\n" ++
+        "In order to run your customized tests, you need to implement your own Main module and call Wrecker.Runner.run \n" ++
+        "and provide a list of actions to execute. Please refer to the README file for instructions."
+showTestGroups tests =
+    mapM_
+        (\(i, (groupName, _)) -> putStrLn (">> " ++ show @Int i ++ ". " ++ groupName))
+        (zip [1 ..] tests)
 
 {-| Run a single benchmark
 -}

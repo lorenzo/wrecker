@@ -1,91 +1,69 @@
 {-# LANGUAGE RecordWildCards, BangPatterns, LambdaCase,
-  OverloadedStrings #-}
+  OverloadedStrings, DataKinds, NamedFieldPuns #-}
 
-module Wrecker.Statistics where
+module Wrecker.Statistics
+    ( Statistics(..)
+    , AllStats(..)
+    , ResultStatistics(..)
+    , stepAllStats
+    , emptyAllStats
+    , printStats
+    , pprStats
+    ) where
 
 import Data.Aeson (ToJSON(..), Value(..), (.=), object)
 import Data.Function
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
 import Data.List (sortBy)
+import Data.Maybe (fromMaybe)
+import qualified Data.TDigest as TD
 import qualified Data.Text as T
-import qualified Data.Vector.Unboxed as U
 import qualified Network.URI as URI
-import System.Console.Ansigraph.Core
 import Text.Printf
 import Text.Tabular
 import qualified Text.Tabular.AsciiArt as AsciiArt
 import Wrecker.Options
 import Wrecker.Recorder
 
-data Histogram =
-    Histogram
-    deriving (Show, Eq, Ord)
-
-data VarianceAndMean = VarianceAndMean
-    { var :: {-# UNPACK #-}!Double
-    , varMeanDiff :: {-# UNPACK #-}!Double
-    , varMean :: {-# UNPACK #-}!Double
-    , varCount :: {-# UNPACK #-}!Double
-    } deriving (Show, Eq, Ord)
-
-emptyVarianceAndMean :: VarianceAndMean
-emptyVarianceAndMean = VarianceAndMean {var = 0, varMeanDiff = 0, varMean = 0, varCount = 0}
-
-stableVarianceStep :: VarianceAndMean -> Double -> VarianceAndMean
-stableVarianceStep (!(VarianceAndMean {..})) !newValue =
-    let !newCount = varCount + 1
-        !newMean = varMean + ((newValue - varMean) / newCount)
-        !newMeanDiff = varMeanDiff + ((newValue - varMean) * (newValue - newMean))
-    in VarianceAndMean (newMeanDiff / newCount) newMeanDiff newMean newCount
-
-insertHist :: Histogram -> Double -> Histogram
-insertHist h _ = h
+insertHist :: Double -> TD.TDigest 5 -> TD.TDigest 5
+insertHist = TD.insert
 
 -- | These are the
 data Statistics = Statistics
-    { sVarMean :: {-# UNPACK #-}!VarianceAndMean
-      -- ^ Combined variance and mean. This type contains information useful for
-      --   incremental computation of the variance and mean. To get the individual
-      --   components use 'variance' and 'mean'.
-    , sMax :: {-# UNPACK #-}!Double
-      -- ^ The maximum time
-    , sMin :: {-# UNPACK #-}!Double
-      -- ^ The maximum time
-    , sHistogram :: {-# UNPACK #-}!Histogram
-      -- ^ A histogram of times
+    { sHistogram :: TD.TDigest 5
+  -- ^ A histogram of times
     , sTotal :: {-# UNPACK #-}!Double
-      -- ^ The total time
-    } deriving (Show, Eq, Ord)
+  -- ^ The total time
+    } deriving (Show)
 
 -- | Extract the mean
 mean :: Statistics -> Double
-mean = varMean . sVarMean
+mean = fromMaybe 0 . TD.mean . sHistogram
 
 -- | Extract the variance
 variance :: Statistics -> Double
-variance = var . sVarMean
+variance = fromMaybe 0 . TD.variance . sHistogram
+
+quantile95 :: Statistics -> Double
+quantile95 = fromMaybe 0 . TD.quantile 0.95 . sHistogram
 
 statsCount :: Statistics -> Int
-statsCount = floor . (+ 0.1) . varCount . sVarMean
+statsCount = floor . (+ 0.1) . TD.totalWeight . sHistogram
+
+minimumValue :: Statistics -> Double
+minimumValue = TD.minimumValue . sHistogram
+
+maximumValue :: Statistics -> Double
+maximumValue = TD.maximumValue . sHistogram
 
 emptyStatistics :: Statistics
-emptyStatistics =
-    Statistics
-    { sVarMean = emptyVarianceAndMean
-    , sMax = 0
-    , sMin = 1e32 -- i don't know ... maxBound won't work
-    , sHistogram = Histogram
-    , sTotal = 0
-    }
+emptyStatistics = Statistics {sHistogram = mempty, sTotal = 0}
 
 stepStatistics :: Statistics -> Double -> Statistics
 stepStatistics !stats !value =
     stats
-    { sVarMean = stableVarianceStep (sVarMean stats) value
-    , sMax = max (sMax stats) value
-    , sMin = min (sMin stats) value
-    , sHistogram = insertHist (sHistogram stats) value
+    { sHistogram = insertHist value (sHistogram stats) -- insert new value in histogram
     , sTotal = sTotal stats + value
     }
 
@@ -102,7 +80,7 @@ data ResultStatistics = ResultStatistics
     , rs5xx :: !Statistics
     , rsFailed :: !Statistics
     , rsRollup :: !Statistics
-    } deriving (Show, Eq, Ord)
+    } deriving (Show)
 
 emptyResultStatistics :: ResultStatistics
 emptyResultStatistics =
@@ -117,12 +95,12 @@ emptyResultStatistics =
 stepResultStatistics :: ResultStatistics -> RunResult -> ResultStatistics
 stepResultStatistics !stats =
     \case
-        Success {..} ->
+        Success {resultTime} ->
             stats
             { rs2xx = stepStatistics (rs2xx stats) resultTime
             , rsRollup = stepStatistics (rsRollup stats) resultTime
             }
-        ErrorStatus {..}
+        ErrorStatus {resultTime, errorCode}
             | is4xx errorCode ->
                 stats
                 { rs4xx = stepStatistics (rs4xx stats) resultTime
@@ -133,7 +111,7 @@ stepResultStatistics !stats =
                 { rs5xx = stepStatistics (rs5xx stats) resultTime
                 , rsRollup = stepStatistics (rsRollup stats) resultTime
                 }
-        Error {..} ->
+        Error {resultTime} ->
             stats
             { rsFailed = stepStatistics (rsFailed stats) resultTime
             , rsRollup = stepStatistics (rsRollup stats) resultTime
@@ -157,27 +135,21 @@ errorRate x =
     fromIntegral (count4xx x + count5xx x + countFailed x) /
     fromIntegral (count2xx x + count4xx x + count5xx x + countFailed x)
 
-isEntirelySuccessful :: ResultStatistics -> Bool
-isEntirelySuccessful x = (count4xx x + count5xx x + countFailed x) == 0
-
-successfulToResult :: Statistics -> ResultStatistics
-successfulToResult x = emptyResultStatistics {rs2xx = x}
-
 {- | AllStats has all of the ... stats. This type stores all of the information
      'wrecker' uses to display metrics to the user.
 -}
 data AllStats = AllStats
     { aRollup :: !ResultStatistics
-      -- ^ The "total" stats. This computes things like total 2xx and average time
-      --   Across all requests.
+    -- ^ The "total" stats. This computes things like total 2xx and average time
+    --   Across all requests.
     , aCompleteRuns :: !ResultStatistics
-      -- ^ This contains statistic for actions that completed entirely successfully.
-      --   Useful for knowing if a complex action is under some desired total time.
+    -- ^ This contains statistic for actions that completed entirely successfully.
+    --   Useful for knowing if a complex action is under some desired total time.
     , aRuns :: !(HashMap Int ResultStatistics)
-      -- ^ This is an intermediate holding spot for scripts that are still executing.
+    -- ^ This is an intermediate holding spot for scripts that are still executing.
     , aPerUrl :: !(HashMap String ResultStatistics)
-      -- ^ This is the per key (URL) statistics.
-    } deriving (Show, Eq)
+    -- ^ This is the per key (URL) statistics.
+    } deriving (Show)
 
 emptyAllStats :: AllStats
 emptyAllStats =
@@ -229,29 +201,28 @@ stepAllStats allStats index key result =
 -------------------------------------------------------------------------------
 -- Rendering
 -------------------------------------------------------------------------------
-renderHistogram :: U.Vector Int -> String
-renderHistogram bins = renderPV $ U.toList powers
-  where
-    total = fromIntegral $ U.sum bins
-    powers = U.map (\x -> fromIntegral x / total) bins
-
 statToRow :: ResultStatistics -> [String]
 statToRow x =
     [ printf "%.4f" $ mean $ rs2xx x
-    , printf "%.8f" $ variance $ rs2xx x
-    , printf "%.4f" $ sMax $ rs2xx x
-    , let theMin = sMin $ rs2xx x
-      in if theMin == 1e32
-             then "N/A"
-             else printf "%.4f" $ sMin $ rs2xx x
+    , fixNaN (quantile95 $ rs2xx x)
+    , fixBounds (maximumValue $ rs2xx x)
+    , fixBounds (minimumValue $ rs2xx x)
     , show $ count2xx x
     , show $ count4xx x
     , show $ count5xx x
     , show $ countFailed x
-    , printf "%.4f" $ errorRate x
+    , fixNaN (errorRate x)
     ]
+  where
+    fixNaN n =
+        if isNaN n
+            then "N/A"
+            else printf "%.4f" n
+    fixBounds n =
+        if isInfinite n
+            then "N/A"
+            else printf "%.4f" n
 
---    , renderHistogram $ mempty
 pprStats :: Maybe Int -> URLDisplay -> AllStats -> String
 pprStats nameSize urlDisplay stats = AsciiArt.render id id id $ statsTable nameSize urlDisplay stats
 
@@ -270,20 +241,19 @@ statsTable urlSize urlDisp AllStats {..} =
            (Group
                 SingleLine
                 [ Header "mean"
-                , Header "variance"
+                , Header "95%"
                 , Header "max"
                 , Header "min"
-                , Header "Successful Count"
-                , Header "4xx Count"
-                , Header "5xx Count"
-                , Header "Failure Count"
+                , Header "2xx"
+                , Header "4xx"
+                , Header "5xx"
+                , Header "Failures"
                 , Header "Error Rate"
                 ])
            (map (statToRow . snd) sortedPerUrl) +====+
        SemiTable (Group SingleLine [Header "All"]) (statToRow aRollup) +====+
        SemiTable (Group SingleLine [Header "Successful Runs"]) (statToRow aCompleteRuns)
 
---                            , Header "Histogram"
 printStats :: Options -> AllStats -> IO ()
 printStats options sampler =
     putStrLn $ pprStats (requestNameColumnSize options) (urlDisplay options) sampler
@@ -295,12 +265,22 @@ instance ToJSON Statistics where
     toJSON x =
         object
             [ "mean" .= mean x
-            , "variance" .= variance x
-            , "max" .= sMax x
-            , "min" .= sMin x
+            , "quantile95" .= fixNaN (quantile95 x)
+            , "variance" .= fixNaN (variance x)
+            , "max" .= fixBounds (maximumValue x)
+            , "min" .= fixBounds (minimumValue x)
             , "total" .= sTotal x
             , "count" .= statsCount x
             ]
+      where
+        fixBounds n =
+            if isInfinite n
+                then 0
+                else n
+        fixNaN n =
+            if isNaN n
+                then 0
+                else n
 
 instance ToJSON ResultStatistics where
     toJSON ResultStatistics {..} =

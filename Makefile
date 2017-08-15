@@ -24,12 +24,12 @@ package-macos: dist-macos/wreck
 dist-linux/wreck:
 	mkdir -p dist-linux
 	stack --docker --docker-auto-pull --docker-image $(DOCKER_LINUX_IMAGE) --install-ghc install --local-bin-path dist-linux
-	zip dist-linux/wrecker.zip dist-linux
+	zip dist-linux/wrecker.zip dist-linux/*
 
 dist-macos/wreck:
 	mkdir -p dist-macos
 	stack install --local-bin-path dist-macos
-	zip dist-macos/wrecker.zip dist-macos
+	zip dist-macos/wrecker.zip dist-macos/*
 
 release.json: dist-linux/wreck package-macos
 	@echo "Creating draft release for $(VERSION)"

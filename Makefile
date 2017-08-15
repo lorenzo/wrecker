@@ -17,21 +17,21 @@ guard-%:
 		exit 1; \
 	fi;
 
-package-linux: dist-linux/wrecker
+package-linux: dist-linux/wreck
 
-package-macos: dist-macos/wrecker
+package-macos: dist-macos/wreck
 
-dist-linux/sg-wrecker:
+dist-linux/wreck:
 	mkdir -p dist-linux
 	stack --docker --docker-auto-pull --docker-image $(DOCKER_LINUX_IMAGE) --install-ghc install --local-bin-path dist-linux
-	zip dist-linux/wrecker.zip dist-linux/wrecker
+	zip dist-linux/wrecker.zip dist-linux
 
-dist-macos/sg-wrecker:
+dist-macos/wreck:
 	mkdir -p dist-macos
 	stack install --local-bin-path dist-macos
-	zip dist-macos/wrecker.zip dist-macos/wrecker
+	zip dist-macos/wrecker.zip dist-macos
 
-release.json: dist-linux/sg-wrecker package-macos
+release.json: dist-linux/wreck package-macos
 	@echo "Creating draft release for $(VERSION)"
 	@curl $(AUTH) -XPOST $(API_HOST)/repos/lorenzo/wrecker/releases -d '{ \
 		"tag_name": "$(VERSION)", \

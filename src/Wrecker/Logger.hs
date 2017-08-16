@@ -28,12 +28,9 @@ data Logger = Logger
      goes over the max size.
 -}
 newLogger ::
-       Handle
-          -- ^ The 'Handle' to log to.
-    -> Int
-          -- ^ Max buffer size
-    -> LogLevel
-          -- ^ Minimum log level to log.
+       Handle -- ^ The 'Handle' to log to.
+    -> Int -- ^ Max buffer size
+    -> LogLevel -- ^ Minimum log level to log.
     -> IO Logger
 newLogger handle maxSize currentLevel = do
     (inChan, outChan) <- U.newChan maxSize

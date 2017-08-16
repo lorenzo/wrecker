@@ -32,9 +32,9 @@ insertHist = TD.insert
 -- | These are the
 data Statistics = Statistics
     { sHistogram :: TD.TDigest 5
-  -- ^ A histogram of times
+      -- ^ A histogram of times
     , sTotal :: {-# UNPACK #-}!Double
-  -- ^ The total time
+      -- ^ The total time
     } deriving (Show)
 
 -- | Extract the mean

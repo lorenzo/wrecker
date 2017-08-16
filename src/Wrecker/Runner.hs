@@ -39,10 +39,10 @@ import Wrecker.Statistics
 -- | The 'Environment' holds state necessary to make and record HTTP calls.
 data Environment = Environment
     { recorder :: Recorder
-  -- ^ The 'Recorder' can be used with the 'record' function to ... record times.
+      -- ^ The 'Recorder' can be used with the 'record' function to ... record times.
     , context :: ConnectionContext
-  -- ^ Provided as a convience, this is a shared TLS context to reuse for
-  --   better performance.
+      -- ^ Provided as a convience, this is a shared TLS context to reuse for
+      --   better performance.
     }
 
 {- | Typically 'wrecker' will control benchmarking actions. However in some situations
@@ -122,7 +122,7 @@ runWithNextVar (Options {..}) consumer final action = do
     context <- Connection.initConnectionContext
     sampler <- newNextRef emptyAllStats
     logger <- newStdErrLogger 100000 logLevel
-  -- Collect events and
+    -- Collect events and
     forkIO $
         handle (\(e :: SomeException) -> void $ logError logger $ show e) $
         collectEvent logger sampler recorder

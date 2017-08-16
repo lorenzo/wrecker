@@ -9,22 +9,24 @@ them with either 'defaultMain' or 'run'.
 
 See https://github.com/lorenzo/wrecker#readme for more information.
 -}
-module Wrecker -- * Entry Points
-    ( defaultMain
+module Wrecker
+    (
+    -- * Entry Points
+    defaultMain
     , run
     , runOne
-               -- * Wrecker State
+    -- * Wrecker State
     , Environment(..)
-               -- * Recorder
+    -- * Recorder
     , Recorder
     , record
-               -- * Options
+    -- * Options
     , Options(..)
     , URLDisplay(..)
     , RunType(..)
     , DisplayMode(..)
     , defaultOptions
-               -- Output Statistics
+    -- Output Statistics
     , AllStats(..)
     , ResultStatistics(..)
     ) where

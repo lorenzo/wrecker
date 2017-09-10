@@ -6,7 +6,7 @@
 -}
 -- All of this code below was copied from bos's `Network.Wreq.Session`
 -- and modified to include the wrecker recorder
-{-# LANGUAGE CPP, RecordWildCards #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Network.Wreq.Wrecker
     ( Session
@@ -29,13 +29,25 @@ module Network.Wreq.Wrecker
     , optionsWith
     , putWith
     , deleteWith
+    -- * HTTP Methods to get JSON responses
+    , getJSON
+    , getJSONWith
+    , postJSON
+    , postJSONWith
+    , putJSON
+    , putJSONWith
+    , deleteJSON
+    , deleteJSONWith
     ) where
 
+import Control.Exception (fromException, handle, throwIO)
+import Data.Aeson (FromJSON)
 import qualified Data.ByteString.Lazy as L
 import Data.Default (def)
 import Network.Connection (ConnectionContext)
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as TLS
+import qualified Network.Wreq as Wreq
 import qualified Network.Wreq.Session as Session
 import qualified Network.Wreq.Types as Wreq
 import Wrecker
@@ -148,3 +160,63 @@ putWith opts = withSess1 (Session.putWith opts)
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith'.
 deleteWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response L.ByteString)
 deleteWith opts = withSess (Session.deleteWith opts)
+
+-- | 'Session'-specific version of 'Network.Wreq.get' that expects a JSON response.
+getJSON :: FromJSON a => Session -> String -> IO (HTTP.Response a)
+getJSON = withSess (\sess url -> Session.get sess url >>= fromJSON "GET" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.post' that expects a JSON response.
+postJSON :: (Wreq.Postable a, FromJSON b) => Session -> String -> a -> IO (HTTP.Response b)
+postJSON = withSess1 (\sess url body -> Session.post sess url body >>= fromJSON "POST" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.put' that expects a JSON response.
+putJSON :: (Wreq.Putable a, FromJSON b) => Session -> String -> a -> IO (HTTP.Response b)
+putJSON = withSess1 (\sess url body -> Session.put sess url body >>= fromJSON "PUT" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.delete' that expects a JSON response.
+deleteJSON :: FromJSON a => Session -> String -> IO (HTTP.Response a)
+deleteJSON = withSess (\sess url -> Session.delete sess url >>= fromJSON "DELETE" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.getWith' that expects a JSON response.
+getJSONWith :: FromJSON a => Wreq.Options -> Session -> String -> IO (HTTP.Response a)
+getJSONWith opts = withSess (\sess url -> Session.getWith opts sess url >>= fromJSON "GET" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.postWith' that expects a JSON response.
+postJSONWith ::
+       (Wreq.Postable a, FromJSON b)
+    => Wreq.Options
+    -> Session
+    -> String
+    -> a
+    -> IO (HTTP.Response b)
+postJSONWith opts =
+    withSess1 (\sess url body -> Session.postWith opts sess url body >>= fromJSON "POST" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.putWith' that expects a JSON response.
+putJSONWith ::
+       (Wreq.Putable a, FromJSON b)
+    => Wreq.Options
+    -> Session
+    -> String
+    -> a
+    -> IO (HTTP.Response b)
+putJSONWith opts =
+    withSess1 (\sess url body -> Session.putWith opts sess url body >>= fromJSON "PUT" url)
+
+-- | 'Session'-specific version of 'Network.Wreq.deleteWith' that expects a JSON response.
+deleteJSONWith :: FromJSON a => Wreq.Options -> Session -> String -> IO (HTTP.Response a)
+deleteJSONWith opts =
+    withSess (\sess url -> Session.deleteWith opts sess url >>= fromJSON "DELETE" url)
+
+-- | Helper function used to create better error messages when failing to decode JSON responses
+fromJSON :: FromJSON a => String -> String -> HTTP.Response L.ByteString -> IO (HTTP.Response a)
+fromJSON verb url response = handle decorateEx (Wreq.asJSON response)
+  where
+    decorateEx ex =
+        case fromException ex of
+            Just (Wreq.JSONError err) ->
+                throwIO
+                    (LogicError
+                         ("Error decoding the JSON response from " ++
+                          verb ++ " " ++ url ++ " : " ++ err))
+            _ -> throwIO ex

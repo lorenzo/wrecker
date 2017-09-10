@@ -38,6 +38,20 @@ data Recorder = Recorder
     , rQueue :: !(TBMQueue Event)
     }
 
+newtype LogicError =
+    LogicError String
+
+instance Show LogicError where
+    show (LogicError err) = err
+
+instance Exception LogicError
+
+newtype HandledError =
+    HandledError SomeException
+    deriving (Show)
+
+instance Exception HandledError
+
 -- The bound here should be configurable
 split :: Recorder -> Recorder
 split Recorder {..} = Recorder rWithQuery (rRunIndex + 1) rQueue
@@ -66,37 +80,37 @@ readEvent = atomically . readTBMQueue . rQueue
 -}
 record :: forall a. Recorder -> String -> IO a -> IO a
 record recorder key action = do
-    let cleanKey =
-            if rWithQuery recorder
-                then key
-                else takeWhile (/= '?') key -- Remove the query string
-    startTime <- getTime Monotonic
-    let recordAction :: IO a
-        recordAction = do
-            r <- action
-            endTime <- getTime Monotonic
-            let !elapsedTime' = diffSeconds endTime startTime
-            addEvent recorder $ Success {resultTime = elapsedTime', name = cleanKey}
-            return r
-        recordException :: HTTP.HttpException -> IO a
-        recordException e = do
-            endTime <- getTime Monotonic
-            case e of
-                HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException resp _) -> do
-                    let code = HTTP.statusCode $ HTTP.responseStatus resp
-                    addEvent recorder $
-                        ErrorStatus
-                        { resultTime = diffSeconds endTime startTime
-                        , errorCode = code
-                        , name = cleanKey
-                        }
-                _ ->
-                    addEvent recorder $
-                    Error
-                    { resultTime = diffSeconds endTime startTime
-                    , exception = toException e
-                    , name = cleanKey
-                    }
-            -- rethrow no matter what
-            throwIO e
-    handle recordException recordAction
+    !startTime <- getTime Monotonic
+    handle (recordException startTime) (recordAction startTime)
+  where
+    cleanKey =
+        if rWithQuery recorder
+            then key
+            else takeWhile (/= '?') key -- Remove the query string
+    recordAction :: TimeSpec -> IO a
+    recordAction startTime = do
+        r <- action
+        endTime <- getTime Monotonic
+        let !elapsedTime' = diffSeconds endTime startTime
+        addEvent recorder $ Success {resultTime = elapsedTime', name = cleanKey}
+        return r
+    recordException :: TimeSpec -> SomeException -> IO a
+    recordException startTime ex = do
+        endTime <- getTime Monotonic
+        handleException endTime ex
+        throwIO (HandledError ex)
+      where
+        handleException endTime e
+            | Just ((HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException resp _))) <-
+                 fromException e = do
+                let code = HTTP.statusCode $ HTTP.responseStatus resp
+                addEvent recorder $
+                    ErrorStatus
+                    {resultTime = diffSeconds endTime startTime, errorCode = code, name = cleanKey}
+            | otherwise =
+                addEvent recorder $
+                Error
+                { resultTime = diffSeconds endTime startTime
+                , exception = toException e
+                , name = cleanKey
+                }

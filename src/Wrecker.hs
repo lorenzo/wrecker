@@ -19,6 +19,7 @@ module Wrecker
     , Environment(..)
     -- * Recorder
     , Recorder
+    , LogicError(..)
     , record
     -- * Options
     , Options(..)

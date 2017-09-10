@@ -32,7 +32,8 @@ import System.Posix.Signals
 import System.Timeout
 import Wrecker.Logger
 import Wrecker.Options
-import Wrecker.Recorder
+import qualified Wrecker.Recorder as Recorder
+import Wrecker.Recorder (Event(..), Recorder)
 import Wrecker.Statistics
 
 -- TODO configure whether errors are used in times or not
@@ -54,7 +55,7 @@ data Environment = Environment
 -}
 newStandaloneRecorder :: IO (NextRef AllStats, Immortal.Thread, Recorder)
 newStandaloneRecorder = do
-    recorder <- newRecorder True 10000
+    recorder <- Recorder.newRecorder True 10000
     logger <- newStdErrLogger 1000 LevelError
     (ref, thread) <- sinkRecorder logger recorder
     return (ref, thread, recorder)
@@ -68,13 +69,13 @@ sinkRecorder logger recorder = do
 updateSampler :: NextRef AllStats -> Event -> IO AllStats
 updateSampler !ref !event =
     modifyNextRef ref $ \x ->
-        let !new = stepAllStats x (eRunIndex event) (name $ eResult event) (eResult event)
+        let !new = stepAllStats x (eRunIndex event) (Recorder.name $ eResult event) (eResult event)
         in (new, new)
 
 collectEvent :: Logger -> NextRef AllStats -> Recorder -> IO ()
 collectEvent logger ref recorder =
     fix $ \next -> do
-        mevent <- readEvent recorder
+        mevent <- Recorder.readEvent recorder
         for_ mevent $ \event -> do
             sampler <- updateSampler ref event
             logDebug logger $ show sampler
@@ -84,22 +85,23 @@ runAction :: Logger -> Int -> Int -> RunType -> (Environment -> IO ()) -> Enviro
 runAction logger timeoutTime concurrency runStyle action env = do
     threadLimit <- BoundedThreadGroup.new concurrency
     recorderRef <- newIORef $ recorder env
-    let takeRecorder = atomicModifyIORef' recorderRef $ \x -> (split x, x)
+    let takeRecorder = atomicModifyIORef' recorderRef $ \x -> (Recorder.split x, x)
         actionThread =
             void $
             BoundedThreadGroup.forkIO threadLimit $ do
                 rec <- takeRecorder
                 handle
-                    (\(e :: SomeException) -> do
+                    (\e -> do
                          case fromException e of
-                             Just (he :: HTTP.HttpException) -> void $ logWarn logger $ show he
+                             Just (Recorder.HandledError he) -> void $ logWarn logger $ show he
                              Nothing -> do
                                  logWarn logger $ show e
-                                 addEvent (recorder env) $
-                                     Error {resultTime = 0, exception = e, name = "__UNKNOWN__"}
-                                 addEvent rec End) $ do
+                                 Recorder.addEvent (recorder env) $
+                                     Recorder.Error
+                                     {resultTime = 0, exception = e, name = "(Runtime Error)"}
+                                 Recorder.addEvent rec Recorder.End) $ do
                     action (env {recorder = rec})
-                    addEvent rec End
+                    Recorder.addEvent rec Recorder.End
     case runStyle of
         RunCount count -> replicateM_ (count * concurrency) actionThread
         RunTimed time -> void $ timeout (time * 1000000) $ forever actionThread
@@ -113,12 +115,16 @@ runAction logger timeoutTime concurrency runStyle action env = do
 -------------------------------------------------------------------------------
 runWithNextVar ::
        Options
+    -- ^ The run options as passed from the CLI
     -> (NextRef AllStats -> IO ())
+    -- ^ The statistics consumer action. Use this for example to present a summary of the stast
     -> (NextRef AllStats -> IO ())
+    -- ^ The final consumer action. Maybe to present a final chart of the stats.
     -> (Environment -> IO ())
+    -- ^ The load test action
     -> IO AllStats
 runWithNextVar (Options {..}) consumer final action = do
-    recorder <- newRecorder recordQuery 100000
+    recorder <- Recorder.newRecorder recordQuery 100000
     context <- Connection.initConnectionContext
     sampler <- newNextRef emptyAllStats
     logger <- newStdErrLogger 100000 logLevel
@@ -131,7 +137,7 @@ runWithNextVar (Options {..}) consumer final action = do
     let env = Environment {..}
     runAction logger timeoutTime concurrency runStyle action env `finally`
         (do logDebug logger "Shutting Down"
-            stopRecorder recorder
+            Recorder.stopRecorder recorder
             shutdownLogger 1000000 logger
             final sampler)
     readLast sampler

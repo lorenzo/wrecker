@@ -86,7 +86,6 @@ We need JSON, so of course we are using `aeson`.
 
 ```haskell
 import Network.Wreq (Response)
-import qualified Network.Wreq as Wreq
 import Network.Wreq.Wrecker (Session)
 import qualified Network.Wreq.Wrecker as WW
 ```
@@ -97,7 +96,6 @@ import qualified Network.Wreq.Wrecker as WW
 #### Other packages you can mostly ignore
 ```haskell
 import GHC.Generics
-import Data.ByteString.Lazy (ByteString)
 import Data.Text as T
 import Network.HTTP.Client (responseBody)
 ```
@@ -136,16 +134,16 @@ The `Envelope` only exists to transmit data between the server and the browser.
 - We unwrap values coming from the server in `Envelope`.
 
   ```haskell
-  fromEnvelope :: FromJSON a => IO (Response ByteString) -> IO a
-  fromEnvelope x = fmap (value . responseBody) . Wreq.asJSON =<< x
+  fromEnvelope :: FromJSON a => IO (Response (Envelope a)) -> IO a
+  fromEnvelope x = fmap (value . responseBody) x
   ```
 
 - We wrap inputs and unwrap outputs so we can wrap a whole function.
 
   ```haskell
   liftEnvelope :: (ToJSON a, FromJSON b)
-               => (Value -> IO (Response ByteString))
-               -> (a     -> IO b                    )
+               => (Value -> IO (Response (Envelope b)))
+               -> (a     -> IO b)
   liftEnvelope f = fromEnvelope . f . toEnvelope
   ```
 
@@ -155,10 +153,10 @@ We hide the `Envelope` in JSON specialized `get`'s and `post`'s.
 
 ```haskell
 jsonGet :: FromJSON a => Session -> Text -> IO a
-jsonGet sess url = fromEnvelope $ WW.get sess (T.unpack url)
+jsonGet sess url = fromEnvelope $ WW.getJSON sess (T.unpack url)
 
 jsonPost :: (ToJSON a, FromJSON b) => Session -> Text -> a -> IO b
-jsonPost sess url = liftEnvelope $ WW.post sess (T.unpack url)
+jsonPost sess url = liftEnvelope $ WW.postJSON sess (T.unpack url)
 ```
 
 ## <a name="Make_a_Somewhat_Generic_REST_API"> Make a Somewhat Generic REST API

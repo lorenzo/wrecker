@@ -80,6 +80,8 @@ data ResultStatistics = ResultStatistics
     , rs5xx :: !Statistics
     , rsFailed :: !Statistics
     , rsRollup :: !Statistics
+    , rsTotalTests :: !Int
+    , rsTestsFailed :: !Int
     } deriving (Show)
 
 emptyResultStatistics :: ResultStatistics
@@ -90,6 +92,8 @@ emptyResultStatistics =
     , rs5xx = emptyStatistics
     , rsFailed = emptyStatistics
     , rsRollup = emptyStatistics
+    , rsTotalTests = 0
+    , rsTestsFailed = 0
     }
 
 stepResultStatistics :: ResultStatistics -> RunResult -> ResultStatistics
@@ -105,18 +109,22 @@ stepResultStatistics !stats =
                 stats
                 { rs4xx = stepStatistics (rs4xx stats) resultTime
                 , rsRollup = stepStatistics (rsRollup stats) resultTime
+                , rsTestsFailed = rsTestsFailed stats + 1
                 }
             | otherwise ->
                 stats
                 { rs5xx = stepStatistics (rs5xx stats) resultTime
                 , rsRollup = stepStatistics (rsRollup stats) resultTime
+                , rsTestsFailed = rsTestsFailed stats + 1
                 }
         Error {resultTime} ->
             stats
             { rsFailed = stepStatistics (rsFailed stats) resultTime
             , rsRollup = stepStatistics (rsRollup stats) resultTime
+            , rsTestsFailed = rsTestsFailed stats + 1
             }
-        End -> stats
+        RuntimeError -> stats {rsTestsFailed = rsTestsFailed stats + 1}
+        End -> stats {rsTotalTests = rsTotalTests stats + 1}
 
 count2xx :: ResultStatistics -> Int
 count2xx = statsCount . rs2xx
@@ -171,7 +179,7 @@ stepAllStats allStats index key result =
             in case mRunStats of
                    Nothing -> allStats
                    Just stats
-                       | errorRate stats == 0 ->
+                       | rsTestsFailed stats == 0 && errorRate stats == 0 ->
                            let runTime = sTotal $ rs2xx stats
                            in allStats
                               { aCompleteRuns =
@@ -179,8 +187,23 @@ stepAllStats allStats index key result =
                                         (aCompleteRuns allStats)
                                         (Success runTime "")
                               , aRuns = H.delete index $ aRuns allStats
+                              , aRollup = stepResultStatistics (aRollup allStats) result
                               }
-                       | otherwise -> allStats {aRuns = H.delete index $ aRuns allStats}
+                       | otherwise ->
+                           allStats
+                           { aRollup = stepResultStatistics (aRollup allStats) result
+                           , aRuns = H.delete index $ aRuns allStats
+                           }
+        RuntimeError ->
+            allStats
+            { aRollup = stepResultStatistics (aRollup allStats) result
+            , aRuns =
+                  H.insertWith
+                      (\_ x -> stepResultStatistics x result)
+                      index
+                      (stepResultStatistics emptyResultStatistics result) $
+                  aRuns allStats
+            }
         _ ->
             allStats
             { aRollup = stepResultStatistics (aRollup allStats) result
@@ -224,7 +247,17 @@ statToRow x =
             else printf "%.4f" n
 
 pprStats :: Maybe Int -> URLDisplay -> AllStats -> String
-pprStats nameSize urlDisplay stats = AsciiArt.render id id id $ statsTable nameSize urlDisplay stats
+pprStats nameSize urlDisplay stats =
+    let totals = AsciiArt.render id id id $ totalsTable stats
+        urlsTable = AsciiArt.render id id id $ statsTable nameSize urlDisplay stats
+    in urlsTable ++ "\n\n" ++ totals
+
+totalsTable :: AllStats -> Table String String String
+totalsTable AllStats {..} =
+    Table
+        (Group NoLine [Header "Test Runs"])
+        (Group SingleLine [Header "Total", Header "Failed"])
+        [[show $ rsTotalTests aRollup, show $ rsTestsFailed aRollup]]
 
 adjustKey :: Maybe Int -> URLDisplay -> String -> String
 adjustKey keySize urlDisplay key =
@@ -299,4 +332,6 @@ instance ToJSON AllStats where
               Object (H.fromList $ map (\(k, v) -> (T.pack k, toJSON v)) $ H.toList aPerUrl)
             , "runs" .= aCompleteRuns
             , "rollup" .= aRollup
+            , "totalRuns" .= rsTotalTests aRollup
+            , "totalFailures" .= rsTestsFailed aRollup
             ]

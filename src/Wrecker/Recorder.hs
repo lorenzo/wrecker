@@ -21,6 +21,7 @@ data RunResult
     | Error { resultTime :: !Double
             , exception :: !SomeException
             , name :: !String }
+    | RuntimeError
     | End
     deriving (Show)
 

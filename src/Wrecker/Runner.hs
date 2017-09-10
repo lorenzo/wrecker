@@ -25,7 +25,6 @@ import Data.Maybe
 import qualified Graphics.Vty as VTY
 import Network.Connection (ConnectionContext)
 import qualified Network.Connection as Connection
-import qualified Network.HTTP.Client as HTTP
 import System.Exit
 import System.IO
 import System.Posix.Signals
@@ -96,10 +95,8 @@ runAction logger timeoutTime concurrency runStyle action env = do
                              Just (Recorder.HandledError he) -> void $ logWarn logger $ show he
                              Nothing -> do
                                  logWarn logger $ show e
-                                 Recorder.addEvent (recorder env) $
-                                     Recorder.Error
-                                     {resultTime = 0, exception = e, name = "(Runtime Error)"}
-                                 Recorder.addEvent rec Recorder.End) $ do
+                                 Recorder.addEvent (recorder env) Recorder.RuntimeError
+                                 Recorder.addEvent (recorder env) Recorder.End) $ do
                     action (env {recorder = rec})
                     Recorder.addEvent rec Recorder.End
     case runStyle of

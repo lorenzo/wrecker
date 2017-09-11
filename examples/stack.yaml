@@ -1,0 +1,6 @@
+flags: {}
+extra-deps:
+- threads-extras-0.1.0.2
+- unagi-chan-0.4.0.0
+- wrecker-1.1.0.0
+resolver: lts-9.1

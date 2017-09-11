@@ -70,7 +70,7 @@ Not the drones...
 ### The Essence of `wrecker`
 
 ```haskell
-import Wrecker (defaultMain, Environment, LogicError(..))
+import Wrecker (defaultMain, Environment)
 ```
 
 - `defaultMain` is one of two entry points `wrecker` provides (the other is

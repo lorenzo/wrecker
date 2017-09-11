@@ -225,12 +225,14 @@ delete sess (Ref url) = fmap HTTP.responseBody (Wrecker.deleteJSON sess (unpack 
 
 {-|
    Sends as DELETE request to an API endpoint that responds in the JSON format.
+   This function excepts additional options, such as custom headers
 
    > let opts = Network.Wreq.defaults & Network.Wreq.auth ?~ Network.Wreq.basicAuth "user" "pass"
    > Status { success } <- deleteWith opts sess usersDeleteRef
 -}
-delete :: FromJSON a => Wreq.Options -> Wrecker.Session -> Ref a -> IO a
-delete opts sess (Ref url) = fmap HTTP.responseBody (Wrecker.deleteJSONWith opts sess (unpack url))
+deleteWith :: FromJSON a => Wreq.Options -> Wrecker.Session -> Ref a -> IO a
+deleteWith opts sess (Ref url) =
+    fmap HTTP.responseBody (Wrecker.deleteJSONWith opts sess (unpack url))
 
 --
 -- Utitily functions

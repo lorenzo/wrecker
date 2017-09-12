@@ -1,5 +1,5 @@
 name:                wrecker-example
-version:             1.1.1.0
+version:             1.2.0.0
 synopsis:            An example client for Wrecker
 description:
  'wrecker' is a library and executable for creating HTTP benchmarks. It is designed for
@@ -23,7 +23,7 @@ executable example-server
   hs-source-dirs:      .
   main-is:             Server.hs
   build-depends:       base
-                     , wrecker >= 1.1
+                     , wrecker >= 1.2
                      , scotty
                      , aeson-qq
                      , warp >= 3.2.4
@@ -43,7 +43,7 @@ executable example-client
   hs-source-dirs:      .
   main-is:             Client.lhs
   build-depends:       base
-                     , wrecker >= 1.1
+                     , wrecker >= 1.2
                      , wreq
                      , markdown-unlit
                      , aeson
@@ -59,7 +59,7 @@ executable example
   hs-source-dirs:      .
   main-is:             Main.lhs
   build-depends:       base
-                     , wrecker >= 1.1
+                     , wrecker >= 1.2
                      , scotty
                      , aeson-qq
                      , warp >= 3.2.4

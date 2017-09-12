@@ -11,6 +11,7 @@
 module Network.Wreq.Wrecker
     ( Session
     , defaultManagerSettings
+    , withRecordFunction
     -- * Session Creation
     , withWreq
     , withWreqNoCookies
@@ -93,6 +94,13 @@ withWreq f env =
 withWreqNoCookies :: (Session -> IO a) -> Environment -> IO a
 withWreqNoCookies f env =
     withWreqSettings (recorder env) Nothing (defaultManagerSettings (context env)) f
+
+-- | Replaces the record function of the Session with the provided one.
+--
+-- This is useful for custom recorder actions, or if you need to catch any exceptions
+-- thrown by the IO action and don't wish them to bubble up to the statistics.
+withRecordFunction :: (forall a. Recorder -> String -> IO a -> IO a) -> Session -> Session
+withRecordFunction r sess = sess {sRecord = r}
 
 -- | Create a session, using the given cookie jar and manager settings.
 withWreqSettings ::

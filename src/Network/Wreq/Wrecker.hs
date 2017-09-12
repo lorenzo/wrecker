@@ -6,7 +6,7 @@
 -}
 -- All of this code below was copied from bos's `Network.Wreq.Session`
 -- and modified to include the wrecker recorder
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, RankNTypes #-}
 
 module Network.Wreq.Wrecker
     ( Session
@@ -58,6 +58,9 @@ import Wrecker
 data Session = Session
     { sSession :: Session.Session
     , sRecorder :: Recorder
+    , sRecord :: forall a. Recorder -> String -> IO a -> IO a
+      -- ^ A custom function to record the time of of executing the IO action
+      --   By default, it will use 'Wrecker.Recorder.record'
     }
 
 {- | Create 'ManagerSettings' with no timeout using a shared TLS
@@ -101,85 +104,85 @@ withWreqSettings ::
     -> (Session -> IO a)
     -> IO a
 withWreqSettings recorder cookie settings f =
-    Session.withSessionControl cookie settings $ \session -> f (Session session recorder)
+    Session.withSessionControl cookie settings $ \session -> f (Session session recorder record)
 
 -- this records things. It's not ideal, but an more acurate
 -- implementation is harder. Pull requests welcome.
-withSess :: (Session.Session -> String -> IO a) -> Session -> String -> IO a
-withSess f sess key = record (sRecorder sess) key $ f (sSession sess) key
+withRecorder :: (Session.Session -> String -> IO a) -> Session -> String -> IO a
+withRecorder f (Session {..}) key = sRecord sRecorder key $ f sSession key
 
-withSess1 :: (Session.Session -> String -> a -> IO b) -> Session -> String -> a -> IO b
-withSess1 f sess key b = record (sRecorder sess) key $ f (sSession sess) key b
+withRecorder1 :: (Session.Session -> String -> a -> IO b) -> Session -> String -> a -> IO b
+withRecorder1 f (Session {..}) key b = sRecord sRecorder key $ f sSession key b
 
 -- | 'Session'-specific version of 'Network.Wreq.get'.
 get :: Session -> String -> IO (HTTP.Response L.ByteString)
-get = withSess Session.get
+get = withRecorder Session.get
 
 -- | 'Session'-specific version of 'Network.Wreq.post'.
 post :: Wreq.Postable a => Session -> String -> a -> IO (HTTP.Response L.ByteString)
-post = withSess1 Session.post
+post = withRecorder1 Session.post
 
 -- | 'Session'-specific version of 'Network.Wreq.head_'.
 head_ :: Session -> String -> IO (HTTP.Response ())
-head_ = withSess Session.head_
+head_ = withRecorder Session.head_
 
 -- | 'Session'-specific version of 'Network.Wreq.options'.
 options :: Session -> String -> IO (HTTP.Response ())
-options = withSess Session.options
+options = withRecorder Session.options
 
 -- | 'Session'-specific version of 'Network.Wreq.put'.
 put :: Wreq.Putable a => Session -> String -> a -> IO (HTTP.Response L.ByteString)
-put = withSess1 Session.put
+put = withRecorder1 Session.put
 
 -- | 'Session'-specific version of 'Network.Wreq.delete'.
 delete :: Session -> String -> IO (HTTP.Response L.ByteString)
-delete = withSess Session.delete
+delete = withRecorder Session.delete
 
 -- | 'Session'-specific version of 'Network.Wreq.getWith'.
 getWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response L.ByteString)
-getWith opts = withSess (Session.getWith opts)
+getWith opts = withRecorder (Session.getWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.postWith'.
 postWith ::
        Wreq.Postable a => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
-postWith opts = withSess1 (Session.postWith opts)
+postWith opts = withRecorder1 (Session.postWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.headWith'.
 headWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response ())
-headWith opts = withSess (Session.headWith opts)
+headWith opts = withRecorder (Session.headWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.optionsWith'.
 optionsWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response ())
-optionsWith opts = withSess (Session.optionsWith opts)
+optionsWith opts = withRecorder (Session.optionsWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.putWith'.
 putWith ::
        Wreq.Putable a => Wreq.Options -> Session -> String -> a -> IO (HTTP.Response L.ByteString)
-putWith opts = withSess1 (Session.putWith opts)
+putWith opts = withRecorder1 (Session.putWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith'.
 deleteWith :: Wreq.Options -> Session -> String -> IO (HTTP.Response L.ByteString)
-deleteWith opts = withSess (Session.deleteWith opts)
+deleteWith opts = withRecorder (Session.deleteWith opts)
 
 -- | 'Session'-specific version of 'Network.Wreq.get' that expects a JSON response.
 getJSON :: FromJSON a => Session -> String -> IO (HTTP.Response a)
-getJSON = withSess (\sess url -> Session.get sess url >>= fromJSON "GET" url)
+getJSON = withRecorder (\sess url -> Session.get sess url >>= fromJSON "GET" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.post' that expects a JSON response.
 postJSON :: (Wreq.Postable a, FromJSON b) => Session -> String -> a -> IO (HTTP.Response b)
-postJSON = withSess1 (\sess url body -> Session.post sess url body >>= fromJSON "POST" url)
+postJSON = withRecorder1 (\sess url body -> Session.post sess url body >>= fromJSON "POST" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.put' that expects a JSON response.
 putJSON :: (Wreq.Putable a, FromJSON b) => Session -> String -> a -> IO (HTTP.Response b)
-putJSON = withSess1 (\sess url body -> Session.put sess url body >>= fromJSON "PUT" url)
+putJSON = withRecorder1 (\sess url body -> Session.put sess url body >>= fromJSON "PUT" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.delete' that expects a JSON response.
 deleteJSON :: FromJSON a => Session -> String -> IO (HTTP.Response a)
-deleteJSON = withSess (\sess url -> Session.delete sess url >>= fromJSON "DELETE" url)
+deleteJSON = withRecorder (\sess url -> Session.delete sess url >>= fromJSON "DELETE" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.getWith' that expects a JSON response.
 getJSONWith :: FromJSON a => Wreq.Options -> Session -> String -> IO (HTTP.Response a)
-getJSONWith opts = withSess (\sess url -> Session.getWith opts sess url >>= fromJSON "GET" url)
+getJSONWith opts = withRecorder (\sess url -> Session.getWith opts sess url >>= fromJSON "GET" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.postWith' that expects a JSON response.
 postJSONWith ::
@@ -190,7 +193,7 @@ postJSONWith ::
     -> a
     -> IO (HTTP.Response b)
 postJSONWith opts =
-    withSess1 (\sess url body -> Session.postWith opts sess url body >>= fromJSON "POST" url)
+    withRecorder1 (\sess url body -> Session.postWith opts sess url body >>= fromJSON "POST" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.putWith' that expects a JSON response.
 putJSONWith ::
@@ -201,12 +204,12 @@ putJSONWith ::
     -> a
     -> IO (HTTP.Response b)
 putJSONWith opts =
-    withSess1 (\sess url body -> Session.putWith opts sess url body >>= fromJSON "PUT" url)
+    withRecorder1 (\sess url body -> Session.putWith opts sess url body >>= fromJSON "PUT" url)
 
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith' that expects a JSON response.
 deleteJSONWith :: FromJSON a => Wreq.Options -> Session -> String -> IO (HTTP.Response a)
 deleteJSONWith opts =
-    withSess (\sess url -> Session.deleteWith opts sess url >>= fromJSON "DELETE" url)
+    withRecorder (\sess url -> Session.deleteWith opts sess url >>= fromJSON "DELETE" url)
 
 -- | Helper function used to create better error messages when failing to decode JSON responses
 fromJSON :: FromJSON a => String -> String -> HTTP.Response L.ByteString -> IO (HTTP.Response a)

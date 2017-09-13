@@ -86,19 +86,12 @@ runAction logger timeoutTime concurrency runStyle action env = do
     recorderRef <- newIORef $ recorder env
     let takeRecorder = atomicModifyIORef' recorderRef $ \x -> (Recorder.split x, x)
         actionThread =
-            void $
             BoundedThreadGroup.forkIO threadLimit $ do
-                rec <- takeRecorder
-                handle
-                    (\e -> do
-                         case fromException e of
-                             Just (Recorder.HandledError he) -> void $ logWarn logger $ show he
-                             Nothing -> do
-                                 logWarn logger $ show e
-                                 Recorder.addEvent (recorder env) Recorder.RuntimeError
-                                 Recorder.addEvent (recorder env) Recorder.End) $ do
-                    action (env {recorder = rec})
-                    Recorder.addEvent rec Recorder.End
+                bracket takeRecorder (\rec -> Recorder.addEvent rec Recorder.End) $ \rec -> do
+                    result <- try $ action (env {recorder = rec})
+                    case result of
+                        Right _ -> return ()
+                        Left e -> recordException e
     case runStyle of
         RunCount count -> replicateM_ (count * concurrency) actionThread
         RunTimed time -> void $ timeout (time * 1000000) $ forever actionThread
@@ -106,6 +99,14 @@ runAction logger timeoutTime concurrency runStyle action env = do
     case mtimeout of
         Nothing -> void $ logError logger $ "Timed out waiting for all " ++ "threads to complete"
         Just () -> return ()
+  where
+    recordException e =
+        case fromException e of
+            Just (Recorder.HandledError he) -> do
+                void $ logWarn logger $ show he
+            _ -> do
+                logWarn logger $ show e
+                Recorder.addEvent (recorder env) Recorder.RuntimeError
 
 ------------------------------------------------------------------------------
 ---   Generic Run Function

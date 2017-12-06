@@ -45,6 +45,8 @@ import Control.Exception (fromException, handle, throwIO)
 import Data.Aeson (FromJSON)
 import qualified Data.ByteString.Lazy as L
 import Data.Default (def)
+import qualified Data.Text.Lazy as Text
+import qualified Data.Text.Lazy.Encoding as Encoding
 import Network.Connection (ConnectionContext)
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as TLS
@@ -229,5 +231,8 @@ fromJSON verb url response = handle decorateEx (Wreq.asJSON response)
                 throwIO
                     (LogicError
                          ("Error decoding the JSON response from " ++
-                          verb ++ " " ++ url ++ " : " ++ err))
+                          verb ++
+                          " " ++ url ++ " : " ++ err ++ "\n\n" ++ "Actually got:\n" ++ responseBody))
             _ -> throwIO ex
+    responseBody :: String
+    responseBody = Text.unpack . Encoding.decodeUtf8 . HTTP.responseBody $ response

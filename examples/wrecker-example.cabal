@@ -1,5 +1,5 @@
 name:                wrecker-example
-version:             1.2.0.0
+version:             1.2.3.0
 synopsis:            An example client for Wrecker
 description:
  'wrecker' is a library and executable for creating HTTP benchmarks. It is designed for

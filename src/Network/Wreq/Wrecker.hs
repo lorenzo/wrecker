@@ -113,8 +113,9 @@ withWreqSettings ::
     -> HTTP.ManagerSettings
     -> (Session -> IO a)
     -> IO a
-withWreqSettings recorder cookie settings f =
-    Session.withSessionControl cookie settings $ \session -> f (Session session recorder record)
+withWreqSettings recorder cookie settings f = do
+    session <- Session.newSessionControl cookie settings
+    f (Session session recorder record)
 
 -- this records things. It's not ideal, but an more acurate
 -- implementation is harder. Pull requests welcome.

@@ -7,7 +7,4 @@ docker:
   auto-pull: true
   enable: false
   repo: fpco/stack-build
-extra-deps:
-- threads-extras-0.1.0.2
-- unagi-chan-0.4.0.0
-resolver: lts-9.1
+resolver: lts-10.3

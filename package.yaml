@@ -18,8 +18,8 @@ copyright: 2016 skedge.me
 license: BSD3
 github: lorenzo/wrecker
 ghc-options:
-- -Wall
-- -fno-warn-unused-do-bind
+  - -Wall
+  - -fno-warn-unused-do-bind
 library:
   source-dirs: src
   exposed-modules:
@@ -91,8 +91,7 @@ executables:
     ghc-options:
     - -O2
     - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N -I0 -qg
+    - -rtsopts "-with-rtsopts=-N -I0 -qg"
     cpp-options: -D_SERVER_IS_MAIN_
     dependencies:
     - base

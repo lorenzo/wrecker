@@ -16,6 +16,12 @@ module Network.Wreq.Wrecker
     , withWreq
     , withWreqNoCookies
     , withWreqSettings
+    -- * Logging functions
+    , logDebug
+    , logInfo
+    , logWarn
+    , logError
+    , Logger.Logger
     -- * HTTP Methods
     , get
     , post
@@ -53,7 +59,9 @@ import qualified Network.HTTP.Client.TLS as TLS
 import qualified Network.Wreq as Wreq
 import qualified Network.Wreq.Session as Session
 import qualified Network.Wreq.Types as Wreq
+import System.Log.FastLogger (ToLogStr)
 import Wrecker
+import qualified Wrecker.Logger as Logger
 
 {-| An opaque type created by 'withWreq', 'withWreqNoCookies',
     or 'withWreqSettings'. All HTTP calls require a 'Session'.
@@ -64,6 +72,8 @@ data Session = Session
     , sRecord :: forall a. Recorder -> String -> IO a -> IO a
       -- ^ A custom function to record the time of of executing the IO action
       --   By default, it will use 'Wrecker.Recorder.record'
+    , sLogger :: Logger.Logger
+      -- ^ A custom logger that can be used for logging messages from the test functions
     }
 
 {- | Create 'ManagerSettings' with no timeout using a shared TLS
@@ -84,6 +94,7 @@ withWreq :: (Session -> IO a) -> Environment -> IO a
 withWreq f env =
     withWreqSettings
         (recorder env)
+        (logger env)
         (Just (HTTP.createCookieJar []))
         (defaultManagerSettings (context env))
         f
@@ -95,7 +106,7 @@ withWreq f env =
 -- which typically do not use cookies.
 withWreqNoCookies :: (Session -> IO a) -> Environment -> IO a
 withWreqNoCookies f env =
-    withWreqSettings (recorder env) Nothing (defaultManagerSettings (context env)) f
+    withWreqSettings (recorder env) (logger env) Nothing (defaultManagerSettings (context env)) f
 
 -- | Replaces the record function of the Session with the provided one.
 --
@@ -107,15 +118,16 @@ withRecordFunction r sess = sess {sRecord = r}
 -- | Create a session, using the given cookie jar and manager settings.
 withWreqSettings ::
        Recorder
+    -> Logger.Logger
     -> Maybe HTTP.CookieJar
                  -- ^ If 'Nothing' is specified, no cookie management
                  -- will be performed.
     -> HTTP.ManagerSettings
     -> (Session -> IO a)
     -> IO a
-withWreqSettings recorder cookie settings f = do
+withWreqSettings recorder logFunc cookie settings f = do
     session <- Session.newSessionControl cookie settings
-    f (Session session recorder record)
+    f (Session session recorder record logFunc)
 
 -- this records things. It's not ideal, but an more acurate
 -- implementation is harder. Pull requests welcome.
@@ -216,6 +228,18 @@ putJSONWith ::
     -> IO (HTTP.Response b)
 putJSONWith opts =
     withRecorder1 (\sess url body -> Session.putWith opts sess url body >>= fromJSON "PUT" url)
+
+logDebug :: ToLogStr msg => Session -> msg -> IO ()
+logDebug Session {..} = Logger.logDebug sLogger
+
+logInfo :: ToLogStr msg => Session -> msg -> IO ()
+logInfo Session {..} = Logger.logDebug sLogger
+
+logWarn :: ToLogStr msg => Session -> msg -> IO ()
+logWarn Session {..} = Logger.logDebug sLogger
+
+logError :: ToLogStr msg => Session -> msg -> IO ()
+logError Session {..} = Logger.logDebug sLogger
 
 -- | 'Session'-specific version of 'Network.Wreq.deleteWith' that expects a JSON response.
 deleteJSONWith :: FromJSON a => Wreq.Options -> Session -> String -> IO (HTTP.Response a)

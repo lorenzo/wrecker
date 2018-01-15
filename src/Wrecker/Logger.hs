@@ -63,7 +63,7 @@ formatMsg Json level prettyTime msg = toLogStr (encode jsonMsg) <> "\n"
         object
             [ "level" .= toLevelCode level
             , "timestamp" .= TE.decodeUtf8 prettyTime
-            , "full_message" .= TE.decodeUtf8 (fromLogStr msg)
+            , "short_message" .= TE.decodeUtf8 (fromLogStr msg)
             ]
 
 formatLevel :: LogLevel -> LogStr

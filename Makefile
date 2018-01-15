@@ -1,6 +1,6 @@
 .PHONY: package-linux package-macos publish clean
 
-DOCKER_LINUX_IMAGE="fpco/stack-build"
+DOCKER_LINUX_IMAGE="fpco/stack-build:lts-10.3"
 API_HOST=https://api.github.com
 UPLOAD_HOST=https://uploads.github.com
 DASH_VERSION=$(shell echo $(VERSION) | sed -e s/\\./-/g)

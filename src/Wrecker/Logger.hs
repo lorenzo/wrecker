@@ -1,13 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Wrecker.Logger where
 
-import Control.Concurrent
-import qualified Control.Concurrent.Chan.Unagi.Bounded as U
-import Data.Foldable (traverse_)
-import Data.Function
-import System.IO
-import System.Timeout
+import Control.Monad (when)
+import Data.Aeson
+import Data.Monoid ((<>))
+import qualified Data.Text.Encoding as TE
+import System.Log.FastLogger
 
 data LogLevel
     = LevelDebug
@@ -16,74 +16,81 @@ data LogLevel
     | LevelError
     deriving (Show, Eq, Ord, Read)
 
+data LogFormat
+    = PlainText
+    | Json
+    deriving (Eq, Show, Read)
+
 data Logger = Logger
-    { thread :: ThreadId
-    , inChan :: U.InChan (Maybe String)
-    , wait :: IO ()
-    , currentLevel :: LogLevel
+    { currentLevel :: LogLevel
+    , logFormat :: LogFormat
+    , logFunc :: FastLogger
+    , cleanup :: IO ()
+    , timeFormatter :: IO FormattedTime
     }
 
-{- | Create a 'Logger' with the given 'Handle' and max buffer size.
-     The logger will drop messages if it is unable to keep up and it's message buffer
-     goes over the max size.
--}
-newLogger ::
-       Handle -- ^ The 'Handle' to log to.
-    -> Int -- ^ Max buffer size
-    -> LogLevel -- ^ Minimum log level to log.
-    -> IO Logger
-newLogger handle maxSize currentLevel = do
-    (inChan, outChan) <- U.newChan maxSize
-    lock <- newEmptyMVar
-    thread <- readLoop handle outChan lock
-    let wait = takeMVar lock
-    return Logger {..}
-
 -- | Create a logger using stderr. This is the typical way a logger is created.
-newStdErrLogger :: Int -> LogLevel -> IO Logger
-newStdErrLogger = newLogger stderr
-
-readLoop :: Handle -> U.OutChan (Maybe String) -> MVar () -> IO ThreadId
-readLoop handle chan lock =
-    forkIO $ do
-        fix $ \next
-    -- Block on the next elemen
-    -- If it "Just" print it and loop
-    -- Otherwise we are not with the loop
-         -> do
-            U.readChan chan >>=
-                traverse_
-                    (\msg -> do
-                         hPutStrLn handle msg
-                         next)
-        putMVar lock ()
+newStdErrLogger :: LogLevel -> LogFormat -> IO Logger
+newStdErrLogger level format = do
+    let timeFormat =
+            if format == PlainText
+                then "%FT%T"
+                else "%s"
+    timeCache <- newTimeCache timeFormat
+    (logger, clean) <- newFastLogger (LogStderr defaultBufSize)
+    return
+        Logger
+        { currentLevel = level
+        , logFormat = format
+        , logFunc = logger
+        , cleanup = clean
+        , timeFormatter = timeCache
+        }
 
 -- True if the write was successful or False otherwise
-writeLogger :: Logger -> LogLevel -> String -> IO Bool
+writeLogger :: Logger -> LogLevel -> LogStr -> IO ()
 writeLogger Logger {..} messageLevel msg =
-    if (currentLevel <= messageLevel)
-        then U.tryWriteChan inChan $ Just msg
-        else return False
+    when (currentLevel <= messageLevel) $ do
+        t <- timeFormatter
+        logFunc (formatMsg logFormat messageLevel t msg)
 
-shutdownLogger :: Int -> Logger -> IO ()
-shutdownLogger waitTime logger@(Logger {..}) = do
-    U.writeChan inChan Nothing
-    mtimedOut <- timeout waitTime wait
-    case mtimedOut of
-        Nothing -> forceShutdownLogger logger
-        Just () -> return ()
+formatMsg :: LogFormat -> LogLevel -> FormattedTime -> LogStr -> LogStr
+formatMsg PlainText level prettyTime msg =
+    toLogStr ("[" <> prettyTime <> "] - ") <> formatLevel level <> msg <> "\n"
+formatMsg Json level prettyTime msg = toLogStr (encode jsonMsg) <> "\n"
+  where
+    jsonMsg =
+        object
+            [ "level" .= toLevelCode level
+            , "timestamp" .= TE.decodeUtf8 prettyTime
+            , "full_message" .= TE.decodeUtf8 (fromLogStr msg)
+            ]
 
-forceShutdownLogger :: Logger -> IO ()
-forceShutdownLogger Logger {..} = killThread thread
+formatLevel :: LogLevel -> LogStr
+formatLevel level = "[" <> lvl level <> "] - "
+  where
+    lvl LevelDebug = "DBUG"
+    lvl LevelInfo = "INFO"
+    lvl LevelWarn = "WARN"
+    lvl LevelError = "ERRO"
 
-logDebug :: Logger -> String -> IO Bool
-logDebug logger = writeLogger logger LevelDebug
+toLevelCode :: LogLevel -> Int
+toLevelCode LevelDebug = 7
+toLevelCode LevelInfo = 6
+toLevelCode LevelWarn = 4
+toLevelCode LevelError = 3
 
-logInfo :: Logger -> String -> IO Bool
-logInfo logger = writeLogger logger LevelInfo
+shutdownLogger :: Logger -> IO ()
+shutdownLogger Logger {..} = cleanup
 
-logWarn :: Logger -> String -> IO Bool
-logWarn logger = writeLogger logger LevelWarn
+logDebug :: ToLogStr msg => Logger -> msg -> IO ()
+logDebug logger = writeLogger logger LevelDebug . toLogStr
 
-logError :: Logger -> String -> IO Bool
-logError logger = writeLogger logger LevelError
+logInfo :: ToLogStr msg => Logger -> msg -> IO ()
+logInfo logger = writeLogger logger LevelInfo . toLogStr
+
+logWarn :: ToLogStr msg => Logger -> msg -> IO ()
+logWarn logger = writeLogger logger LevelWarn . toLogStr
+
+logError :: ToLogStr msg => Logger -> msg -> IO ()
+logError logger = writeLogger logger LevelError . toLogStr

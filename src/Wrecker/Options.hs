@@ -47,7 +47,9 @@ data Options = Options
       -- ^ This controls the command line display. It can be either Interactive
       --   of NonInteractive
     , logLevel :: LogLevel
-      -- ^
+      -- ^ The log severity to shown in stderr
+    , logFmt :: LogFormat
+      -- ^ The log format to use in stderr (either Json or PlainText)
     , match :: String
       -- ^ Set this to filter the benchmarks using a pattern
     , requestNameColumnSize :: Maybe Int
@@ -75,6 +77,7 @@ defaultOptions =
     , timeoutTime = 100000000
     , displayMode = NonInteractive
     , logLevel = LevelError
+    , logFmt = Json
     , match = ""
     , requestNameColumnSize = Nothing
     , outputFilePath = Nothing
@@ -91,6 +94,7 @@ data PartialOptions = PartialOptions
     , mTimeoutTime :: Maybe Int
     , mDisplayMode :: Maybe DisplayMode
     , mLogLevel :: Maybe LogLevel
+    , mLogFmt :: Maybe LogFormat
     , mMatch :: Maybe String
     , mRequestNameColumnSize :: Maybe Int
     , mOutputFilePath :: Maybe FilePath
@@ -109,6 +113,7 @@ instance Monoid PartialOptions where
         , mTimeoutTime = Just $ timeoutTime defaultOptions
         , mDisplayMode = Just $ displayMode defaultOptions
         , mLogLevel = Just $ logLevel defaultOptions
+        , mLogFmt = Just $ logFmt defaultOptions
         , mMatch = Just $ match defaultOptions
         , mRequestNameColumnSize = requestNameColumnSize defaultOptions
         , mOutputFilePath = outputFilePath defaultOptions
@@ -125,6 +130,7 @@ instance Monoid PartialOptions where
         , mTimeoutTime = mTimeoutTime x <|> mTimeoutTime y
         , mDisplayMode = mDisplayMode x <|> mDisplayMode y
         , mLogLevel = mLogLevel x <|> mLogLevel y
+        , mLogFmt = mLogFmt x <|> mLogFmt y
         , mMatch = mMatch x <|> mMatch y
         , mRequestNameColumnSize = mRequestNameColumnSize x <|> mRequestNameColumnSize y
         , mOutputFilePath = mOutputFilePath x <|> mOutputFilePath y
@@ -143,6 +149,7 @@ completeOptions options =
                        , mTimeoutTime = Just timeoutTime
                        , mDisplayMode = Just displayMode
                        , mLogLevel = Just logLevel
+                       , mLogFmt = Just logFmt
                        , mMatch = Just match
                        , mRequestNameColumnSize = requestNameColumnSize
                        , mOutputFilePath = outputFilePath
@@ -150,7 +157,7 @@ completeOptions options =
                        , murlDisplay = Just urlDisplay
                        , mRecordQuery = Just recordQuery
                        , mListTestGroups = Just listTestGroups
-                       } -> Just $ Options {..}
+                       } -> Just Options {..}
         _ -> Nothing
 
 optionalOption :: Read a => Mod OptionFields a -> Parser (Maybe a)
@@ -180,7 +187,11 @@ pPartialOptions =
          Interactive <$ switch (long "interactive")) <*>
     --
     optionalOption
-        (long "log-level" <> help "Log to stderr events of criticality greater than the LOG_LEVEL") <*>
+        (long "log-level" <>
+         help
+             "Log to stderr events of criticality greater than the LOG_LEVEL (LevelWarn | LevelError | LevelInfo | LevelDebug)") <*>
+    --
+    optionalOption (long "log-format" <> help "Log format to use (Json | PlainText)") <*>
     --
     optionalStrOption (long "match" <> help "Only run tests that match the glob") <*>
     --
@@ -199,36 +210,7 @@ pPartialOptions =
     --
     optionalSwitch (long "list-test-groups" <> help "Shows the list of tests to run and exit")
 
---
 {- | Run the command line parse and return the 'Options'
-
-'runParser' can parse the following options
-
-> $ wrecker-based-app --help
->
-> wrecker - HTTP stress tester and benchmarker
->
-> Usage: example [--concurrency ARG] [--bin-count ARG] ([--run-count ARG] |
->                [--run-timed ARG]) [--timeout-time ARG] [--display-mode ARG]
->                [--log-level ARG] [--match ARG] [--request-name-size ARG]
->                [--output-path ARG] [--silent] [--record-query]
->  Welcome to wrecker
->
-> Available options:
->  -h,--help                Show this help text
->  --concurrency ARG        Number of threads for concurrent requests
->  --bin-count ARG          Number of bins for latency histogram
->  --run-count ARG          number of times to repeat
->  --run-timed ARG          number of seconds to repeat
->  --timeout-time ARG       How long to wait for all requests to finish
->  --display-mode ARG       Display results interactively
->  --log-level ARG          Display results interactively
->  --match ARG              Only run tests that match the glob
->  --request-name-size ARG  Request name size for the terminal display
->  --output-path ARG        Save a JSON file of the the statistics to given path
->  --silent                 Disable all output
->  --record-query           Take in consideration the query string for the report
->  --list-test-groups       Shows the list of tests to run and exit
 -}
 runParser :: IO Options
 runParser = do

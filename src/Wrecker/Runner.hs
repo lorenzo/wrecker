@@ -43,6 +43,7 @@ data Environment = Environment
     , context :: ConnectionContext
       -- ^ Provided as a convience, this is a shared TLS context to reuse for
       --   better performance.
+    , logger :: Logger
     }
 
 {- | Typically 'wrecker' will control benchmarking actions. However in some situations
@@ -55,14 +56,13 @@ data Environment = Environment
 newStandaloneRecorder :: IO (NextRef AllStats, Immortal.Thread, Recorder)
 newStandaloneRecorder = do
     recorder <- Recorder.newRecorder True 10000
-    logger <- newStdErrLogger 1000 LevelError
-    (ref, thread) <- sinkRecorder logger recorder
+    (ref, thread) <- sinkRecorder recorder
     return (ref, thread, recorder)
 
-sinkRecorder :: Logger -> Recorder -> IO (NextRef AllStats, Immortal.Thread)
-sinkRecorder logger recorder = do
+sinkRecorder :: Recorder -> IO (NextRef AllStats, Immortal.Thread)
+sinkRecorder recorder = do
     ref <- newNextRef emptyAllStats
-    immortal <- Immortal.createWithLabel "collectEvent" $ \_ -> collectEvent logger ref recorder
+    immortal <- Immortal.createWithLabel "collectEvent" $ \_ -> collectEvent ref recorder
     return (ref, immortal)
 
 updateSampler :: NextRef AllStats -> Event -> IO AllStats
@@ -71,13 +71,12 @@ updateSampler !ref !event =
         let !new = stepAllStats x (eRunIndex event) (Recorder.name $ eResult event) (eResult event)
         in (new, new)
 
-collectEvent :: Logger -> NextRef AllStats -> Recorder -> IO ()
-collectEvent logger ref recorder =
+collectEvent :: NextRef AllStats -> Recorder -> IO ()
+collectEvent ref recorder =
     fix $ \next -> do
         mevent <- Recorder.readEvent recorder
         for_ mevent $ \event -> do
-            sampler <- updateSampler ref event
-            logDebug logger $ show sampler
+            _ <- updateSampler ref event
             next
 
 runAction :: Logger -> Int -> Int -> RunType -> (Environment -> IO ()) -> Environment -> IO ()
@@ -125,18 +124,18 @@ runWithNextVar (Options {..}) consumer final action = do
     recorder <- Recorder.newRecorder recordQuery 100000
     context <- Connection.initConnectionContext
     sampler <- newNextRef emptyAllStats
-    logger <- newStdErrLogger 100000 logLevel
+    logger <- newStdErrLogger logLevel logFmt
     -- Collect events and
     forkIO $
         handle (\(e :: SomeException) -> void $ logError logger $ show e) $
-        collectEvent logger sampler recorder
+        collectEvent sampler recorder
     consumer sampler
     logDebug logger "Starting Runs"
     let env = Environment {..}
     runAction logger timeoutTime concurrency runStyle action env `finally`
         (do logDebug logger "Shutting Down"
             Recorder.stopRecorder recorder
-            shutdownLogger 1000000 logger
+            shutdownLogger logger
             final sampler)
     readLast sampler
 

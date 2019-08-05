@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, BangPatterns, LambdaCase,
-  OverloadedStrings, DataKinds, NamedFieldPuns #-}
+  OverloadedStrings, DataKinds, NamedFieldPuns, CPP #-}
 
 module Wrecker.Statistics
     ( Statistics(..)
@@ -18,6 +18,9 @@ import Data.HashMap.Strict (HashMap)
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import qualified Data.TDigest as TD
+#if MIN_VERSION_tdigest(0,2,1)
+import qualified Data.TDigest.Postprocess as TD (totalWeight)
+#endif
 import qualified Data.Text as T
 import qualified Network.URI as URI
 import Text.Printf

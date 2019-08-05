@@ -4,6 +4,7 @@ module Wrecker.Options where
 
 import Control.Exception
 import Data.Monoid
+import Data.Semigroup (Semigroup(..))
 import Options.Applicative
 import Wrecker.Logger
 
@@ -104,6 +105,25 @@ data PartialOptions = PartialOptions
     , mListTestGroups :: Maybe Bool
     } deriving (Show, Eq)
 
+instance Semigroup PartialOptions where
+    x <> y =
+        PartialOptions
+        { mConcurrency = mConcurrency x <|> mConcurrency y
+        , mBinCount = mBinCount x <|> mBinCount y
+        , mRunStyle = mRunStyle x <|> mRunStyle y
+        , mTimeoutTime = mTimeoutTime x <|> mTimeoutTime y
+        , mDisplayMode = mDisplayMode x <|> mDisplayMode y
+        , mLogLevel = mLogLevel x <|> mLogLevel y
+        , mLogFmt = mLogFmt x <|> mLogFmt y
+        , mMatch = mMatch x <|> mMatch y
+        , mRequestNameColumnSize = mRequestNameColumnSize x <|> mRequestNameColumnSize y
+        , mOutputFilePath = mOutputFilePath x <|> mOutputFilePath y
+        , mSilent = mSilent x <|> mSilent y
+        , murlDisplay = murlDisplay x <|> murlDisplay y
+        , mRecordQuery = mRecordQuery x <|> mRecordQuery y
+        , mListTestGroups = mListTestGroups x <|> mListTestGroups y
+        }
+
 instance Monoid PartialOptions where
     mempty =
         PartialOptions
@@ -122,23 +142,7 @@ instance Monoid PartialOptions where
         , mRecordQuery = Just $ recordQuery defaultOptions
         , mListTestGroups = Just $ listTestGroups defaultOptions
         }
-    mappend x y =
-        PartialOptions
-        { mConcurrency = mConcurrency x <|> mConcurrency y
-        , mBinCount = mBinCount x <|> mBinCount y
-        , mRunStyle = mRunStyle x <|> mRunStyle y
-        , mTimeoutTime = mTimeoutTime x <|> mTimeoutTime y
-        , mDisplayMode = mDisplayMode x <|> mDisplayMode y
-        , mLogLevel = mLogLevel x <|> mLogLevel y
-        , mLogFmt = mLogFmt x <|> mLogFmt y
-        , mMatch = mMatch x <|> mMatch y
-        , mRequestNameColumnSize = mRequestNameColumnSize x <|> mRequestNameColumnSize y
-        , mOutputFilePath = mOutputFilePath x <|> mOutputFilePath y
-        , mSilent = mSilent x <|> mSilent y
-        , murlDisplay = murlDisplay x <|> murlDisplay y
-        , mRecordQuery = mRecordQuery x <|> mRecordQuery y
-        , mListTestGroups = mListTestGroups x <|> mListTestGroups y
-        }
+    mappend = (<>)
 
 completeOptions :: PartialOptions -> Maybe Options
 completeOptions options =

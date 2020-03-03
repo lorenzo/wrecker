@@ -7,4 +7,4 @@ docker:
   auto-pull: true
   enable: false
   repo: fpco/stack-build
-resolver: lts-10.3
+resolver: lts-13.29
